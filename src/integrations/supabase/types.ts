@@ -124,6 +124,7 @@ export type Database = {
           id: string
           last_name: string
           major: string | null
+          required_sessions: number | null
           student_id: string | null
           updated_at: string | null
           year_level: string | null
@@ -136,6 +137,7 @@ export type Database = {
           id: string
           last_name: string
           major?: string | null
+          required_sessions?: number | null
           student_id?: string | null
           updated_at?: string | null
           year_level?: string | null
@@ -148,6 +150,7 @@ export type Database = {
           id?: string
           last_name?: string
           major?: string | null
+          required_sessions?: number | null
           student_id?: string | null
           updated_at?: string | null
           year_level?: string | null
@@ -242,7 +245,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "student" | "teacher" | "admin"
+      app_role: "student" | "teacher" | "admin" | "super_admin"
       coaching_status: "pending" | "approved" | "rejected"
     }
     CompositeTypes: {
@@ -371,7 +374,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["student", "teacher", "admin"],
+      app_role: ["student", "teacher", "admin", "super_admin"],
       coaching_status: ["pending", "approved", "rejected"],
     },
   },

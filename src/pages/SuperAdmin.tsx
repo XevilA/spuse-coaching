@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AppointmentCalendar } from "@/components/AppointmentCalendar";
 import { Textarea } from "@/components/ui/textarea";
+import { DashboardStats } from "@/components/DashboardStats";
+import { Badge } from "@/components/ui/badge";
 
 export default function SuperAdmin() {
   const [user, setUser] = useState<any>(null);
@@ -21,12 +23,15 @@ export default function SuperAdmin() {
   const [users, setUsers] = useState<any[]>([]);
   const [groups, setGroups] = useState<any[]>([]);
   const [lineChannels, setLineChannels] = useState<any[]>([]);
-  const [totalSessions, setTotalSessions] = useState(0);
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [teacherAssignments, setTeacherAssignments] = useState<any[]>([]);
+  const [groupMembers, setGroupMembers] = useState<any[]>([]);
   const [minSessions, setMinSessions] = useState("10");
   const [isLoading, setIsLoading] = useState(true);
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [isAddGroupOpen, setIsAddGroupOpen] = useState(false);
   const [isAddLineChannelOpen, setIsAddLineChannelOpen] = useState(false);
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [newUser, setNewUser] = useState({
     email: "",
     password: "",
@@ -78,21 +83,25 @@ export default function SuperAdmin() {
 
   const fetchData = async (userId: string) => {
     try {
-      const [profileRes, usersRes, groupsRes, sessionsRes, settingsRes, lineChannelsRes] = await Promise.all([
+      const [profileRes, usersRes, groupsRes, sessionsRes, settingsRes, lineChannelsRes, assignmentsRes, membersRes] = await Promise.all([
         supabase.from("profiles").select("*").eq("id", userId).single(),
         supabase.from("profiles").select(`*, user_roles (role)`),
         supabase.from("student_groups").select("*"),
-        supabase.from("coaching_sessions").select("id"),
+        supabase.from("coaching_sessions").select("*, profiles!coaching_sessions_student_id_fkey(group_id)"),
         supabase.from("coaching_settings").select("*").eq("key", "min_sessions").single(),
         supabase.from("line_notifications").select("*"),
+        supabase.from("teacher_assignments").select("*, profiles!teacher_assignments_teacher_id_fkey(first_name, last_name), student_groups(name)"),
+        supabase.from("group_members").select("*, profiles!group_members_student_id_fkey(first_name, last_name, student_id)"),
       ]);
 
       if (profileRes.data) setProfile(profileRes.data);
       if (usersRes.data) setUsers(usersRes.data);
       if (groupsRes.data) setGroups(groupsRes.data);
-      if (sessionsRes.data) setTotalSessions(sessionsRes.data.length);
+      if (sessionsRes.data) setSessions(sessionsRes.data);
       if (settingsRes.data) setMinSessions(settingsRes.data.value);
       if (lineChannelsRes.data) setLineChannels(lineChannelsRes.data);
+      if (assignmentsRes.data) setTeacherAssignments(assignmentsRes.data);
+      if (membersRes.data) setGroupMembers(membersRes.data);
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -351,6 +360,112 @@ export default function SuperAdmin() {
     }
   };
 
+  const handleAssignTeacher = async (groupId: string, teacherId: string) => {
+    try {
+      const { error } = await supabase
+        .from("teacher_assignments")
+        .insert({ group_id: groupId, teacher_id: teacherId });
+
+      if (error) throw error;
+
+      toast({
+        title: "มอบหมายอาจารย์สำเร็จ",
+      });
+
+      if (user) fetchData(user.id);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+      });
+    }
+  };
+
+  const handleRemoveTeacherAssignment = async (assignmentId: string) => {
+    if (!confirm("ต้องการยกเลิกการมอบหมายนี้หรือไม่?")) return;
+
+    try {
+      const { error } = await supabase
+        .from("teacher_assignments")
+        .delete()
+        .eq("id", assignmentId);
+
+      if (error) throw error;
+
+      toast({
+        title: "ยกเลิกการมอบหมายสำเร็จ",
+      });
+
+      if (user) fetchData(user.id);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+      });
+    }
+  };
+
+  const handleAddStudentToGroup = async (groupId: string, studentId: string) => {
+    try {
+      const { error } = await supabase
+        .from("group_members")
+        .insert({ group_id: groupId, student_id: studentId });
+
+      if (error) throw error;
+
+      // Update student's group_id in profiles
+      await supabase
+        .from("profiles")
+        .update({ group_id: groupId })
+        .eq("id", studentId);
+
+      toast({
+        title: "เพิ่มนักศึกษาสำเร็จ",
+      });
+
+      if (user) fetchData(user.id);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+      });
+    }
+  };
+
+  const handleRemoveStudentFromGroup = async (memberId: string, studentId: string) => {
+    if (!confirm("ต้องการลบนักศึกษาออกจากกลุ่มนี้หรือไม่?")) return;
+
+    try {
+      const { error } = await supabase
+        .from("group_members")
+        .delete()
+        .eq("id", memberId);
+
+      if (error) throw error;
+
+      // Clear student's group_id in profiles
+      await supabase
+        .from("profiles")
+        .update({ group_id: null })
+        .eq("id", studentId);
+
+      toast({
+        title: "ลบนักศึกษาสำเร็จ",
+      });
+
+      if (user) fetchData(user.id);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+      });
+    }
+  };
+
   if (isLoading) {
     return <div className="flex items-center justify-center min-h-screen">กำลังโหลด...</div>;
   }
@@ -358,6 +473,28 @@ export default function SuperAdmin() {
   const studentCount = users.filter(u => u.user_roles?.[0]?.role === "student").length;
   const teacherCount = users.filter(u => u.user_roles?.[0]?.role === "teacher").length;
   const adminCount = users.filter(u => u.user_roles?.[0]?.role === "admin").length;
+  
+  const students = users.filter(u => u.user_roles?.[0]?.role === "student");
+  const teachers = users.filter(u => u.user_roles?.[0]?.role === "teacher");
+
+  const dashboardStats = {
+    totalStudents: studentCount,
+    totalTeachers: teacherCount,
+    totalGroups: groups.length,
+    totalSessions: sessions.length,
+    approvedSessions: sessions.filter(s => s.status === "approved").length,
+    pendingSessions: sessions.filter(s => s.status === "pending").length,
+    rejectedSessions: sessions.filter(s => s.status === "rejected").length,
+    sessionsByGroup: groups.map(g => ({
+      name: g.name,
+      count: sessions.filter(s => s.profiles?.group_id === g.id).length,
+    })),
+    sessionsByStatus: [
+      { name: "อนุมัติแล้ว", value: sessions.filter(s => s.status === "approved").length },
+      { name: "รอตรวจสอบ", value: sessions.filter(s => s.status === "pending").length },
+      { name: "ไม่อนุมัติ", value: sessions.filter(s => s.status === "rejected").length },
+    ],
+  };
 
   return (
     <DashboardLayout role="super_admin" userName={`${profile?.first_name || ""} ${profile?.last_name || ""}`}>
@@ -405,13 +542,18 @@ export default function SuperAdmin() {
           </Card>
         </div>
 
-        <Tabs defaultValue="users" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+        <Tabs defaultValue="dashboard" className="w-full">
+          <TabsList className="grid w-full grid-cols-5">
+            <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="users">จัดการผู้ใช้</TabsTrigger>
             <TabsTrigger value="groups">จัดการกลุ่ม</TabsTrigger>
             <TabsTrigger value="line">LINE Notifications</TabsTrigger>
             <TabsTrigger value="settings">ตั้งค่าระบบ</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="dashboard">
+            <DashboardStats stats={dashboardStats} />
+          </TabsContent>
 
           <TabsContent value="users" className="space-y-4">
             <Card>
@@ -595,11 +737,20 @@ export default function SuperAdmin() {
                   </TableHeader>
                   <TableBody>
                     {groups.map((group: any) => (
-                      <TableRow key={group.id}>
+                      <React.Fragment key={group.id}>
+                        <TableRow>
                         <TableCell className="font-medium">{group.name}</TableCell>
                         <TableCell>{group.major}</TableCell>
-                        <TableCell>{group.year_level}</TableCell>
+                         <TableCell>{group.year_level}</TableCell>
                         <TableCell className="text-right">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setSelectedGroup(selectedGroup === group.id ? null : group.id)}
+                            className="mr-2"
+                          >
+                            {selectedGroup === group.id ? "ซ่อน" : "จัดการ"}
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -609,6 +760,79 @@ export default function SuperAdmin() {
                           </Button>
                         </TableCell>
                       </TableRow>
+                      {selectedGroup === group.id ? (
+                        <TableRow>
+                          <TableCell colSpan={4}>
+                            <div className="p-4 space-y-4 bg-muted/50 rounded-lg">
+                              <div className="space-y-2">
+                                <h4 className="font-semibold">อาจารย์ผู้รับผิดชอบ</h4>
+                                <div className="flex gap-2 flex-wrap">
+                                  {teacherAssignments
+                                    .filter(a => a.group_id === group.id)
+                                    .map(assignment => (
+                                      <Badge key={assignment.id} variant="secondary" className="gap-2">
+                                        {assignment.profiles?.first_name} {assignment.profiles?.last_name}
+                                        <button
+                                          onClick={() => handleRemoveTeacherAssignment(assignment.id)}
+                                          className="ml-1 hover:text-destructive"
+                                        >
+                                          ✕
+                                        </button>
+                                      </Badge>
+                                    ))}
+                                </div>
+                                <Select onValueChange={(teacherId) => handleAssignTeacher(group.id, teacherId)}>
+                                  <SelectTrigger className="w-[300px]">
+                                    <SelectValue placeholder="เพิ่มอาจารย์" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {teachers.map(t => (
+                                      <SelectItem key={t.id} value={t.id}>
+                                        {t.first_name} {t.last_name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <div className="space-y-2">
+                                <h4 className="font-semibold">นักศึกษาในกลุ่ม</h4>
+                                <div className="flex gap-2 flex-wrap">
+                                  {groupMembers
+                                    .filter(m => m.group_id === group.id)
+                                    .map(member => (
+                                      <Badge key={member.id} variant="outline" className="gap-2">
+                                        {member.profiles?.first_name} {member.profiles?.last_name}
+                                        ({member.profiles?.student_id})
+                                        <button
+                                          onClick={() => handleRemoveStudentFromGroup(member.id, member.student_id)}
+                                          className="ml-1 hover:text-destructive"
+                                        >
+                                          ✕
+                                        </button>
+                                      </Badge>
+                                    ))}
+                                </div>
+                                <Select onValueChange={(studentId) => handleAddStudentToGroup(group.id, studentId)}>
+                                  <SelectTrigger className="w-[300px]">
+                                    <SelectValue placeholder="เพิ่มนักศึกษา" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {students
+                                      .filter(s => !groupMembers.some(m => m.student_id === s.id && m.group_id === group.id))
+                                      .map(s => (
+                                        <SelectItem key={s.id} value={s.id}>
+                                          {s.first_name} {s.last_name} ({s.student_id})
+                                        </SelectItem>
+                                      ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ) : null}
+                      </React.Fragment>
                     ))}
                   </TableBody>
                 </Table>

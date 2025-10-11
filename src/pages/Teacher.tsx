@@ -55,6 +55,35 @@ export default function Teacher() {
       const { data: profileRes } = await supabase.from("profiles").select("*").eq("id", user?.id || "").single();
       if (profileRes) setProfile(profileRes);
 
+      // Get teacher's assigned groups
+      const { data: assignments } = await supabase
+        .from("teacher_assignments")
+        .select("group_id")
+        .eq("teacher_id", user?.id || "");
+
+      if (!assignments || assignments.length === 0) {
+        setStudents([]);
+        setIsLoading(false);
+        return;
+      }
+
+      const groupIds = assignments.map(a => a.group_id);
+
+      // Get students in assigned groups
+      const { data: groupMembers } = await supabase
+        .from("group_members")
+        .select("student_id")
+        .in("group_id", groupIds);
+
+      if (!groupMembers || groupMembers.length === 0) {
+        setStudents([]);
+        setIsLoading(false);
+        return;
+      }
+
+      const studentIds = groupMembers.map(m => m.student_id);
+
+      // Get coaching sessions for students in assigned groups only
       const { data: sessionsData } = await supabase
         .from("coaching_sessions")
         .select(`
@@ -65,6 +94,7 @@ export default function Teacher() {
             student_id
           )
         `)
+        .in("student_id", studentIds)
         .order("created_at", { ascending: false });
 
       if (sessionsData) {

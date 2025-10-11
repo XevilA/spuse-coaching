@@ -30,27 +30,45 @@ export const LINENotificationSender = ({ userId, role }: LINENotificationSenderP
   }, []);
 
   const fetchChannels = async () => {
-    if (role === "super_admin") {
-      // Super admin can see all channels
-      const { data } = await supabase
-        .from("line_notifications")
-        .select("id, name")
-        .eq("enabled", true);
-      
-      setChannels(data || []);
-    } else {
-      // Teachers can only see their assigned channels
-      const { data } = await supabase
-        .from("line_channel_assignments")
-        .select("line_notification_id, line_notifications(id, name)")
-        .eq("teacher_id", userId);
-      
-      const teacherChannels = data?.map(item => ({
-        id: item.line_notifications.id,
-        name: item.line_notifications.name
-      })) || [];
-      
-      setChannels(teacherChannels);
+    try {
+      if (role === "super_admin") {
+        // Super admin can see all channels
+        const { data, error } = await supabase
+          .from("line_notifications")
+          .select("id, name")
+          .eq("enabled", true);
+        
+        if (error) throw error;
+        setChannels(data || []);
+      } else {
+        // Teachers can only see their assigned channels
+        const { data, error } = await supabase
+          .from("line_channel_assignments")
+          .select(`
+            line_notification_id,
+            line_notifications:line_notification_id (
+              id,
+              name
+            )
+          `)
+          .eq("teacher_id", userId);
+        
+        if (error) throw error;
+        
+        const teacherChannels = data?.map((item: any) => ({
+          id: item.line_notifications?.id || item.line_notification_id,
+          name: item.line_notifications?.name || "Unknown Channel"
+        })).filter(channel => channel.id) || [];
+        
+        setChannels(teacherChannels);
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถโหลด LINE Channel ได้",
+      });
+      console.error("Error fetching channels:", error);
     }
   };
 

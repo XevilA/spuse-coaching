@@ -325,6 +325,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      book_appointment_atomic: {
+        Args: { appointment_id: string; student_id: string }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

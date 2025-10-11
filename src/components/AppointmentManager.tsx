@@ -85,15 +85,16 @@ export const AppointmentManager = ({ role, userId }: AppointmentManagerProps) =>
 
   const handleBookAppointment = async (appointmentId: string) => {
     try {
-      const { error } = await supabase
-        .from("appointments")
-        .update({
-          student_id: userId,
-          status: "booked",
-        })
-        .eq("id", appointmentId);
+      const { data, error } = await supabase.rpc('book_appointment_atomic', {
+        appointment_id: appointmentId,
+        student_id: userId,
+      });
 
       if (error) throw error;
+      
+      if (!data) {
+        throw new Error("ไม่สามารถจองนัดหมายได้ อาจมีคนจองไปแล้วหรือนัดหมายไม่สามารถจองได้");
+      }
 
       toast({
         title: "สำเร็จ",

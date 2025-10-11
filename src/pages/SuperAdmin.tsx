@@ -209,12 +209,36 @@ export default function SuperAdmin() {
       if (error) throw error;
 
       if (data.user) {
+        // Wait a bit for the trigger to complete
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Update the role if different from auto-assigned role
         const { error: roleError } = await supabase
           .from("user_roles")
           .update({ role: newUser.role as "student" | "teacher" | "admin" | "super_admin" })
           .eq("user_id", data.user.id);
 
-        if (roleError) throw roleError;
+        if (roleError) {
+          console.error("Role update error:", roleError);
+          // Don't throw error here, user is created but role might not be updated
+        }
+
+        // Update additional profile fields if needed
+        const profileUpdates: any = {};
+        if (newUser.role === "student" && newUser.email.includes("@spumail.net")) {
+          // Extract student ID from email if needed
+          profileUpdates.student_id = newUser.email.split("@")[0];
+        } else if (newUser.role === "teacher" && newUser.email.includes("@spu.ac.th")) {
+          // Extract employee ID from email if needed
+          profileUpdates.employee_id = newUser.email.split("@")[0];
+        }
+
+        if (Object.keys(profileUpdates).length > 0) {
+          await supabase
+            .from("profiles")
+            .update(profileUpdates)
+            .eq("id", data.user.id);
+        }
       }
 
       toast({

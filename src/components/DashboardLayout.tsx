@@ -31,30 +31,31 @@ export const DashboardLayout = ({ children, role, userName }: DashboardLayoutPro
   const getRoleLabel = () => {
     if (role === "student") return "นักศึกษา";
     if (role === "teacher") return "อาจารย์";
+    if (role === "super_admin") return "Super Admin";
     return "ผู้ดูแลระบบ";
   };
 
   return (
     <div className="min-h-screen" style={{ background: "var(--gradient-subtle)" }}>
-      <header className="bg-card border-b border-border shadow-sm">
+      <header className="bg-primary border-b border-primary-dark shadow-lg animate-fade-in" style={{ boxShadow: "var(--shadow-glow)" }}>
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl" style={{ background: "var(--gradient-primary)" }}>
+              <div className="p-2 rounded-xl bg-white/10 backdrop-blur-sm hover-scale">
                 <GraduationCap className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-bold gradient-text">ระบบติดตามใบ Coaching</h1>
-                <p className="text-sm text-muted-foreground">มหาวิทยาลัยศรีปทุม</p>
+                <h1 className="text-xl font-bold text-white">ระบบติดตามใบ Coaching</h1>
+                <p className="text-sm text-white/80">มหาวิทยาลัยศรีปทุม</p>
               </div>
             </div>
             
             <div className="flex items-center gap-4">
               <div className="text-right">
-                <p className="text-sm font-medium">{userName}</p>
-                <p className="text-xs text-muted-foreground">{getRoleLabel()}</p>
+                <p className="text-sm font-medium text-white">{userName}</p>
+                <p className="text-xs text-white/70">{getRoleLabel()}</p>
               </div>
-              <Button variant="outline" size="sm" onClick={handleLogout}>
+              <Button variant="outline" size="sm" onClick={handleLogout} className="border-white/30 text-white hover:bg-white/10 hover-scale">
                 <LogOut className="w-4 h-4 mr-2" />
                 ออกจากระบบ
               </Button>

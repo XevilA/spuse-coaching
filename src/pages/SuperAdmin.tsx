@@ -537,7 +537,7 @@ export default function SuperAdmin() {
               <FileCheck className="w-4 h-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">{totalSessions}</div>
+              <div className="text-3xl font-bold">{sessions.length}</div>
             </CardContent>
           </Card>
         </div>

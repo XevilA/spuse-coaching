@@ -19,6 +19,15 @@ interface DashboardStatsProps {
 const COLORS = ['hsl(var(--primary))', 'hsl(var(--warning))', 'hsl(var(--destructive))'];
 
 export function DashboardStats({ stats }: DashboardStatsProps) {
+  // Remove duplicate data from charts
+  const uniqueSessionsByGroup = stats.sessionsByGroup?.filter((item, index, self) =>
+    index === self.findIndex((t) => t.name === item.name)
+  ) || [];
+
+  const uniqueSessionsByStatus = stats.sessionsByStatus?.filter((item, index, self) =>
+    index === self.findIndex((t) => t.name === item.name)
+  ) || [];
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -95,14 +104,14 @@ export function DashboardStats({ stats }: DashboardStatsProps) {
         </Card>
       </div>
 
-      {stats.sessionsByGroup && stats.sessionsByGroup.length > 0 && (
+      {uniqueSessionsByGroup.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>ใบ Coaching แยกตามกลุ่มเรียน</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={stats.sessionsByGroup}>
+              <BarChart data={uniqueSessionsByGroup}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" />
                 <YAxis />
@@ -115,7 +124,7 @@ export function DashboardStats({ stats }: DashboardStatsProps) {
         </Card>
       )}
 
-      {stats.sessionsByStatus && stats.sessionsByStatus.length > 0 && (
+      {uniqueSessionsByStatus.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>สถานะใบ Coaching</CardTitle>
@@ -124,7 +133,7 @@ export function DashboardStats({ stats }: DashboardStatsProps) {
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
-                  data={stats.sessionsByStatus}
+                  data={uniqueSessionsByStatus}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
@@ -133,7 +142,7 @@ export function DashboardStats({ stats }: DashboardStatsProps) {
                   fill="hsl(var(--primary))"
                   dataKey="value"
                 >
-                  {stats.sessionsByStatus.map((entry, index) => (
+                  {uniqueSessionsByStatus.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>

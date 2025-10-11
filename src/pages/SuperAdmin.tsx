@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Shield, Users, FileCheck, Settings, UserPlus, Trash2, Download } from "lucide-react";
+import { exportToPDF, exportToExcel, exportToCSV } from "@/utils/exportUtils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
@@ -58,6 +59,63 @@ export default function SuperAdmin() {
   useEffect(() => {
     checkAuth();
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    // Setup realtime subscriptions
+    const channel = supabase
+      .channel('admin-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'profiles'
+        },
+        () => {
+          fetchData(user.id);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'coaching_sessions'
+        },
+        () => {
+          fetchData(user.id);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'teacher_assignments'
+        },
+        () => {
+          fetchData(user.id);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'group_members'
+        },
+        () => {
+          fetchData(user.id);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
 
   const checkAuth = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -201,28 +259,34 @@ export default function SuperAdmin() {
     }
   };
 
-  const exportReport = () => {
-    const csv = [
-      ["Email", "ชื่อ", "นามสกุล", "บทบาท", "รหัสนักศึกษา", "รหัสพนักงาน"],
-      ...users.map(u => [
-        u.email,
-        u.first_name,
-        u.last_name,
-        u.user_roles?.[0]?.role || "-",
-        u.student_id || "-",
-        u.employee_id || "-",
-      ])
-    ].map(row => row.join(",")).join("\n");
+  const exportReport = (format: 'pdf' | 'excel' | 'csv') => {
+    const exportData = users.map(u => ({
+      'Email': u.email,
+      'ชื่อ': u.first_name,
+      'นามสกุล': u.last_name,
+      'บทบาท': u.user_roles?.[0]?.role === "super_admin" ? "Super Admin" :
+                u.user_roles?.[0]?.role === "admin" ? "ผู้ดูแลระบบ" : 
+                u.user_roles?.[0]?.role === "teacher" ? "อาจารย์" : "นักศึกษา",
+      'รหัสนักศึกษา': u.student_id || "-",
+      'รหัสพนักงาน': u.employee_id || "-"
+    }));
 
-    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `super-admin-report-${new Date().toISOString().split("T")[0]}.csv`;
-    link.click();
+    if (format === 'pdf') {
+      exportToPDF(
+        exportData,
+        'รายงานผู้ใช้งานระบบ',
+        ['Email', 'ชื่อ', 'นามสกุล', 'บทบาท', 'รหัสนักศึกษา', 'รหัสพนักงาน'],
+        ['Email', 'ชื่อ', 'นามสกุล', 'บทบาท', 'รหัสนักศึกษา', 'รหัสพนักงาน']
+      );
+    } else if (format === 'excel') {
+      exportToExcel(exportData, 'รายงานผู้ใช้งานระบบ', 'ผู้ใช้');
+    } else {
+      exportToCSV(exportData, 'รายงานผู้ใช้งานระบบ');
+    }
 
     toast({
       title: "ส่งออกสำเร็จ",
-      description: "ดาวน์โหลดรายงานแล้ว",
+      description: `ดาวน์โหลดรายงานแล้ว (${format.toUpperCase()})`,
     });
   };
 
@@ -567,9 +631,17 @@ export default function SuperAdmin() {
                     <CardDescription>เพิ่ม แก้ไข หรือลบผู้ใช้งานในระบบ</CardDescription>
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="outline" onClick={exportReport}>
+                    <Button variant="outline" size="sm" onClick={() => exportReport('pdf')}>
                       <Download className="w-4 h-4 mr-2" />
-                      ส่งออก CSV
+                      PDF
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => exportReport('excel')}>
+                      <Download className="w-4 h-4 mr-2" />
+                      Excel
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => exportReport('csv')}>
+                      <Download className="w-4 h-4 mr-2" />
+                      CSV
                     </Button>
                     <Dialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen}>
                       <DialogTrigger asChild>

@@ -5,7 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CheckCircle, XCircle, Eye, Users, FileCheck, UserPlus, Trash2 } from "lucide-react";
+import { CheckCircle, XCircle, Eye, Users, FileCheck, UserPlus, Trash2, Download } from "lucide-react";
+import { exportToPDF, exportToExcel, exportToCSV } from "@/utils/exportUtils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -33,6 +34,41 @@ export default function Teacher() {
   useEffect(() => {
     checkAuth();
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    // Setup realtime subscription for coaching sessions and group changes
+    const channel = supabase
+      .channel('teacher-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'coaching_sessions'
+        },
+        () => {
+          fetchData();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'group_members'
+        },
+        () => {
+          fetchData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
 
   useEffect(() => {
     if (selectedSession?.file_url) {
@@ -265,6 +301,34 @@ export default function Teacher() {
   const totalSessions = students.reduce((sum, s) => sum + s.sessions.length, 0);
   const totalPending = students.reduce((sum, s) => sum + s.pendingCount, 0);
 
+  const handleExportStudents = (format: 'pdf' | 'excel' | 'csv') => {
+    const exportData = students.map((student: any) => ({
+      'รหัสนักศึกษา': student.studentInfo.student_id || '-',
+      'ชื่อ-นามสกุล': `${student.studentInfo.first_name} ${student.studentInfo.last_name}`,
+      'จำนวนครั้ง': student.sessions.length,
+      'อนุมัติแล้ว': student.completedCount,
+      'รอตรวจสอบ': student.pendingCount
+    }));
+
+    if (format === 'pdf') {
+      exportToPDF(
+        exportData,
+        'รายชื่อนักศึกษา',
+        ['รหัสนักศึกษา', 'ชื่อ-นามสกุล', 'จำนวนครั้ง', 'อนุมัติแล้ว', 'รอตรวจสอบ'],
+        ['รหัสนักศึกษา', 'ชื่อ-นามสกุล', 'จำนวนครั้ง', 'อนุมัติแล้ว', 'รอตรวจสอบ']
+      );
+    } else if (format === 'excel') {
+      exportToExcel(exportData, 'รายชื่อนักศึกษา', 'นักศึกษา');
+    } else {
+      exportToCSV(exportData, 'รายชื่อนักศึกษา');
+    }
+
+    toast({
+      title: "ส่งออกสำเร็จ",
+      description: `ดาวน์โหลดรายงานแล้ว (${format.toUpperCase()})`,
+    });
+  };
+
   if (isLoading) {
     return <div className="flex items-center justify-center min-h-screen">กำลังโหลด...</div>;
   }
@@ -313,8 +377,26 @@ export default function Teacher() {
 
         <Card>
           <CardHeader>
-            <CardTitle>รายชื่อนักศึกษา</CardTitle>
-            <CardDescription>ตรวจสอบและอนุมัติใบ coaching</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>รายชื่อนักศึกษา</CardTitle>
+                <CardDescription>ตรวจสอบและอนุมัติใบ coaching</CardDescription>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => handleExportStudents('pdf')}>
+                  <Download className="w-4 h-4 mr-2" />
+                  PDF
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => handleExportStudents('excel')}>
+                  <Download className="w-4 h-4 mr-2" />
+                  Excel
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => handleExportStudents('csv')}>
+                  <Download className="w-4 h-4 mr-2" />
+                  CSV
+                </Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <Table>
@@ -331,8 +413,8 @@ export default function Teacher() {
               <TableBody>
                 {students.map((student: any) => (
                   <TableRow key={student.studentInfo.student_id}>
-                    <TableCell className="font-medium">{student.studentInfo.student_id || "-"}</TableCell>
-                    <TableCell>{`${student.studentInfo.first_name} ${student.studentInfo.last_name}`}</TableCell>
+                    <TableCell className="font-semibold text-lg">{student.studentInfo.student_id || "-"}</TableCell>
+                    <TableCell className="font-semibold text-lg">{`${student.studentInfo.first_name} ${student.studentInfo.last_name}`}</TableCell>
                     <TableCell className="text-center">{student.sessions.length}</TableCell>
                     <TableCell className="text-center">
                       <Badge className="bg-success text-success-foreground">{student.completedCount}</Badge>

@@ -24,6 +24,31 @@ export default function Student() {
     checkAuth();
   }, []);
 
+  useEffect(() => {
+    if (!user) return;
+
+    // Setup realtime subscription for coaching sessions
+    const channel = supabase
+      .channel('student-sessions-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'coaching_sessions',
+          filter: `student_id=eq.${user.id}`
+        },
+        () => {
+          if (user?.id) fetchData(user.id);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
   const checkAuth = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
@@ -187,6 +212,37 @@ export default function Student() {
   return (
     <DashboardLayout role="student" userName={`${profile?.first_name} ${profile?.last_name}`}>
       <div className="space-y-6">
+        <Card className="border-2">
+          <CardHeader>
+            <CardTitle className="text-2xl">ข้อมูลส่วนตัว</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-6">
+              <div className="text-center space-y-2 py-6 border-b">
+                <h2 className="text-4xl font-bold text-primary">
+                  {profile?.first_name} {profile?.last_name}
+                </h2>
+                <p className="text-3xl font-semibold text-muted-foreground">
+                  {profile?.student_id || "-"}
+                </p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground mb-1">ชั้นปี</p>
+                  <p className="text-2xl font-bold">{profile?.year_level || "-"}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground mb-1">สาขา</p>
+                  <p className="text-2xl font-bold">{profile?.major || "-"}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground mb-1">อีเมล</p>
+                  <p className="text-lg font-medium break-all">{profile?.email}</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
         <AppointmentManager role="student" userId={user?.id || ""} />
         <Card className="card-hover border-2">
           <CardHeader>

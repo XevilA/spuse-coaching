@@ -9,26 +9,43 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Shield, Users, FileCheck, Settings, UserPlus, Trash2, Download } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AppointmentCalendar } from "@/components/AppointmentCalendar";
+import { Textarea } from "@/components/ui/textarea";
 
 export default function SuperAdmin() {
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [users, setUsers] = useState<any[]>([]);
   const [groups, setGroups] = useState<any[]>([]);
+  const [lineChannels, setLineChannels] = useState<any[]>([]);
   const [totalSessions, setTotalSessions] = useState(0);
   const [minSessions, setMinSessions] = useState("10");
   const [isLoading, setIsLoading] = useState(true);
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
+  const [isAddGroupOpen, setIsAddGroupOpen] = useState(false);
+  const [isAddLineChannelOpen, setIsAddLineChannelOpen] = useState(false);
   const [newUser, setNewUser] = useState({
     email: "",
     password: "",
     firstName: "",
     lastName: "",
     role: "student",
+  });
+  const [newGroup, setNewGroup] = useState({
+    name: "",
+    major: "",
+    yearLevel: "",
+  });
+  const [newLineChannel, setNewLineChannel] = useState({
+    name: "",
+    description: "",
+    channelAccessToken: "",
+    channelSecret: "",
+    groupId: "",
+    notificationType: "",
   });
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -61,12 +78,13 @@ export default function SuperAdmin() {
 
   const fetchData = async (userId: string) => {
     try {
-      const [profileRes, usersRes, groupsRes, sessionsRes, settingsRes] = await Promise.all([
+      const [profileRes, usersRes, groupsRes, sessionsRes, settingsRes, lineChannelsRes] = await Promise.all([
         supabase.from("profiles").select("*").eq("id", userId).single(),
         supabase.from("profiles").select(`*, user_roles (role)`),
         supabase.from("student_groups").select("*"),
         supabase.from("coaching_sessions").select("id"),
         supabase.from("coaching_settings").select("*").eq("key", "min_sessions").single(),
+        supabase.from("line_notifications").select("*"),
       ]);
 
       if (profileRes.data) setProfile(profileRes.data);
@@ -74,6 +92,7 @@ export default function SuperAdmin() {
       if (groupsRes.data) setGroups(groupsRes.data);
       if (sessionsRes.data) setTotalSessions(sessionsRes.data.length);
       if (settingsRes.data) setMinSessions(settingsRes.data.value);
+      if (lineChannelsRes.data) setLineChannels(lineChannelsRes.data);
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -198,6 +217,140 @@ export default function SuperAdmin() {
     });
   };
 
+  const handleAddGroup = async () => {
+    try {
+      const { error } = await supabase
+        .from("student_groups")
+        .insert({
+          name: newGroup.name,
+          major: newGroup.major,
+          year_level: newGroup.yearLevel,
+        });
+
+      if (error) throw error;
+
+      toast({
+        title: "เพิ่มกลุ่มสำเร็จ",
+        description: `เพิ่มกลุ่ม ${newGroup.name} แล้ว`,
+      });
+
+      setIsAddGroupOpen(false);
+      setNewGroup({ name: "", major: "", yearLevel: "" });
+      if (user) fetchData(user.id);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "ไม่สามารถเพิ่มกลุ่มได้",
+        description: error.message,
+      });
+    }
+  };
+
+  const handleDeleteGroup = async (groupId: string) => {
+    if (!confirm("ต้องการลบกลุ่มนี้หรือไม่?")) return;
+
+    try {
+      const { error } = await supabase.from("student_groups").delete().eq("id", groupId);
+      if (error) throw error;
+
+      toast({
+        title: "ลบกลุ่มสำเร็จ",
+      });
+
+      if (user) fetchData(user.id);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "ไม่สามารถลบกลุ่มได้",
+        description: error.message,
+      });
+    }
+  };
+
+  const handleAddLineChannel = async () => {
+    try {
+      const { error } = await supabase
+        .from("line_notifications")
+        .insert({
+          name: newLineChannel.name,
+          description: newLineChannel.description,
+          channel_access_token: newLineChannel.channelAccessToken,
+          channel_secret: newLineChannel.channelSecret,
+          group_id: newLineChannel.groupId || null,
+          notification_type: newLineChannel.notificationType || null,
+          enabled: true,
+        });
+
+      if (error) throw error;
+
+      toast({
+        title: "เพิ่ม LINE Channel สำเร็จ",
+        description: `เพิ่ม ${newLineChannel.name} แล้ว`,
+      });
+
+      setIsAddLineChannelOpen(false);
+      setNewLineChannel({
+        name: "",
+        description: "",
+        channelAccessToken: "",
+        channelSecret: "",
+        groupId: "",
+        notificationType: "",
+      });
+      if (user) fetchData(user.id);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "ไม่สามารถเพิ่ม LINE Channel ได้",
+        description: error.message,
+      });
+    }
+  };
+
+  const handleDeleteLineChannel = async (channelId: string) => {
+    if (!confirm("ต้องการลบ LINE Channel นี้หรือไม่?")) return;
+
+    try {
+      const { error } = await supabase.from("line_notifications").delete().eq("id", channelId);
+      if (error) throw error;
+
+      toast({
+        title: "ลบ LINE Channel สำเร็จ",
+      });
+
+      if (user) fetchData(user.id);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "ไม่สามารถลบ LINE Channel ได้",
+        description: error.message,
+      });
+    }
+  };
+
+  const handleToggleLineChannel = async (channelId: string, enabled: boolean) => {
+    try {
+      const { error } = await supabase
+        .from("line_notifications")
+        .update({ enabled })
+        .eq("id", channelId);
+
+      if (error) throw error;
+
+      toast({
+        title: enabled ? "เปิดใช้งานแล้ว" : "ปิดใช้งานแล้ว",
+      });
+
+      if (user) fetchData(user.id);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+      });
+    }
+  };
+
   if (isLoading) {
     return <div className="flex items-center justify-center min-h-screen">กำลังโหลด...</div>;
   }
@@ -253,8 +406,10 @@ export default function SuperAdmin() {
         </div>
 
         <Tabs defaultValue="users" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="users">จัดการผู้ใช้</TabsTrigger>
+            <TabsTrigger value="groups">จัดการกลุ่ม</TabsTrigger>
+            <TabsTrigger value="line">LINE Notifications</TabsTrigger>
             <TabsTrigger value="settings">ตั้งค่าระบบ</TabsTrigger>
           </TabsList>
 
@@ -381,6 +536,218 @@ export default function SuperAdmin() {
             </Card>
           </TabsContent>
 
+          <TabsContent value="groups" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>จัดการกลุ่มนักศึกษา</CardTitle>
+                    <CardDescription>เพิ่ม แก้ไข หรือลบกลุ่มเรียน</CardDescription>
+                  </div>
+                  <Dialog open={isAddGroupOpen} onOpenChange={setIsAddGroupOpen}>
+                    <DialogTrigger asChild>
+                      <Button>
+                        <UserPlus className="w-4 h-4 mr-2" />
+                        เพิ่มกลุ่ม
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>เพิ่มกลุ่มใหม่</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label>ชื่อกลุ่ม</Label>
+                          <Input
+                            value={newGroup.name}
+                            onChange={(e) => setNewGroup({ ...newGroup, name: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>สาขา</Label>
+                          <Input
+                            value={newGroup.major}
+                            onChange={(e) => setNewGroup({ ...newGroup, major: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>ชั้นปี</Label>
+                          <Input
+                            value={newGroup.yearLevel}
+                            onChange={(e) => setNewGroup({ ...newGroup, yearLevel: e.target.value })}
+                          />
+                        </div>
+                        <Button className="w-full" onClick={handleAddGroup}>เพิ่มกลุ่ม</Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>ชื่อกลุ่ม</TableHead>
+                      <TableHead>สาขา</TableHead>
+                      <TableHead>ชั้นปี</TableHead>
+                      <TableHead className="text-right">ดำเนินการ</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {groups.map((group: any) => (
+                      <TableRow key={group.id}>
+                        <TableCell className="font-medium">{group.name}</TableCell>
+                        <TableCell>{group.major}</TableCell>
+                        <TableCell>{group.year_level}</TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteGroup(group.id)}
+                          >
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="line" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>จัดการ LINE Notifications</CardTitle>
+                    <CardDescription>เพิ่ม แก้ไข หรือลบ LINE Channel (รองรับได้ถึง 5-6 channels)</CardDescription>
+                  </div>
+                  <Dialog open={isAddLineChannelOpen} onOpenChange={setIsAddLineChannelOpen}>
+                    <DialogTrigger asChild>
+                      <Button>
+                        <UserPlus className="w-4 h-4 mr-2" />
+                        เพิ่ม Channel
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-2xl">
+                      <DialogHeader>
+                        <DialogTitle>เพิ่ม LINE Channel ใหม่</DialogTitle>
+                        <DialogDescription>
+                          กรอกข้อมูล Channel Access Token และ Channel Secret จาก LINE Developers Console
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label>ชื่อ Channel</Label>
+                          <Input
+                            placeholder="เช่น LINE Group 1"
+                            value={newLineChannel.name}
+                            onChange={(e) => setNewLineChannel({ ...newLineChannel, name: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>คำอธิบาย</Label>
+                          <Textarea
+                            placeholder="คำอธิบายเกี่ยวกับ channel นี้"
+                            value={newLineChannel.description}
+                            onChange={(e) => setNewLineChannel({ ...newLineChannel, description: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Channel Access Token</Label>
+                          <Textarea
+                            placeholder="Channel Access Token จาก LINE Developers"
+                            value={newLineChannel.channelAccessToken}
+                            onChange={(e) => setNewLineChannel({ ...newLineChannel, channelAccessToken: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Channel Secret</Label>
+                          <Input
+                            placeholder="Channel Secret จาก LINE Developers"
+                            value={newLineChannel.channelSecret}
+                            onChange={(e) => setNewLineChannel({ ...newLineChannel, channelSecret: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Group ID (ถ้ามี)</Label>
+                          <Input
+                            placeholder="Group ID สำหรับส่งข้อความ (optional)"
+                            value={newLineChannel.groupId}
+                            onChange={(e) => setNewLineChannel({ ...newLineChannel, groupId: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>ประเภทการแจ้งเตือน</Label>
+                          <Select 
+                            value={newLineChannel.notificationType} 
+                            onValueChange={(value) => setNewLineChannel({ ...newLineChannel, notificationType: value })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="เลือกประเภท" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="group">Group Message</SelectItem>
+                              <SelectItem value="broadcast">Broadcast Message</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Button className="w-full" onClick={handleAddLineChannel}>เพิ่ม Channel</Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>ชื่อ</TableHead>
+                      <TableHead>คำอธิบาย</TableHead>
+                      <TableHead>ประเภท</TableHead>
+                      <TableHead>สถานะ</TableHead>
+                      <TableHead className="text-right">ดำเนินการ</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {lineChannels.map((channel: any) => (
+                      <TableRow key={channel.id}>
+                        <TableCell className="font-medium">{channel.name}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {channel.description || "-"}
+                        </TableCell>
+                        <TableCell>
+                          {channel.notification_type === "group" ? "Group" : 
+                           channel.notification_type === "broadcast" ? "Broadcast" : "-"}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleToggleLineChannel(channel.id, !channel.enabled)}
+                          >
+                            {channel.enabled ? "✅ เปิด" : "❌ ปิด"}
+                          </Button>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteLineChannel(channel.id)}
+                          >
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="settings" className="space-y-4">
             <Card>
               <CardHeader>
@@ -406,32 +773,6 @@ export default function SuperAdmin() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>กลุ่มนักศึกษา</CardTitle>
-                <CardDescription>จำนวน: {groups.length} กลุ่ม</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>ชื่อกลุ่ม</TableHead>
-                      <TableHead>สาขา</TableHead>
-                      <TableHead>ชั้นปี</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {groups.map((group: any) => (
-                      <TableRow key={group.id}>
-                        <TableCell className="font-medium">{group.name}</TableCell>
-                        <TableCell>{group.major}</TableCell>
-                        <TableCell>{group.year_level}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
           </TabsContent>
         </Tabs>
       </div>

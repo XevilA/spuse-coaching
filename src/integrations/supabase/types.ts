@@ -157,29 +157,38 @@ export type Database = {
       line_notifications: {
         Row: {
           channel_access_token: string | null
+          channel_secret: string | null
           created_at: string | null
+          description: string | null
           enabled: boolean | null
           group_id: string | null
           id: string
-          notification_type: string
+          name: string
+          notification_type: string | null
           updated_at: string | null
         }
         Insert: {
           channel_access_token?: string | null
+          channel_secret?: string | null
           created_at?: string | null
+          description?: string | null
           enabled?: boolean | null
           group_id?: string | null
           id?: string
-          notification_type: string
+          name?: string
+          notification_type?: string | null
           updated_at?: string | null
         }
         Update: {
           channel_access_token?: string | null
+          channel_secret?: string | null
           created_at?: string | null
+          description?: string | null
           enabled?: boolean | null
           group_id?: string | null
           id?: string
-          notification_type?: string
+          name?: string
+          notification_type?: string | null
           updated_at?: string | null
         }
         Relationships: []

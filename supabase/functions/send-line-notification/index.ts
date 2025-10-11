@@ -8,7 +8,8 @@ const corsHeaders = {
 
 interface NotificationRequest {
   message: string;
-  notificationType: "group" | "broadcast";
+  channelId?: string;
+  notificationType?: "group" | "broadcast";
 }
 
 serve(async (req) => {
@@ -17,7 +18,7 @@ serve(async (req) => {
   }
 
   try {
-    const { message, notificationType }: NotificationRequest = await req.json();
+    const { message, channelId, notificationType }: NotificationRequest = await req.json();
 
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
@@ -25,12 +26,18 @@ serve(async (req) => {
     );
 
     // Get LINE notification settings
-    const { data: settings } = await supabaseClient
+    let query = supabaseClient
       .from("line_notifications")
       .select("*")
-      .eq("notification_type", notificationType)
-      .eq("enabled", true)
-      .single();
+      .eq("enabled", true);
+
+    if (channelId) {
+      query = query.eq("id", channelId);
+    } else if (notificationType) {
+      query = query.eq("notification_type", notificationType);
+    }
+
+    const { data: settings } = await query.single();
 
     if (!settings || !settings.channel_access_token) {
       throw new Error("LINE notification not configured");

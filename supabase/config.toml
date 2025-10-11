@@ -5,3 +5,6 @@ verify_jwt = true
 
 [functions.send-line-notification]
 verify_jwt = true
+
+[functions.chat-with-ai]
+verify_jwt = false

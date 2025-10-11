@@ -2,10 +2,16 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { AppointmentManager } from "@/components/AppointmentManager";
+import { LeaveRequestForm } from "@/components/LeaveRequestForm";
+import { RoomBookingForm } from "@/components/RoomBookingForm";
+import { EventRequestForm } from "@/components/EventRequestForm";
+import { AIAssistant } from "@/components/AIAssistant";
+import { Footer } from "@/components/Footer";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Upload, FileText, CheckCircle, Clock, XCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -243,103 +249,134 @@ export default function Student() {
             </div>
           </CardContent>
         </Card>
-        <AppointmentManager role="student" userId={user?.id || ""} />
-        <Card className="card-hover border-2">
-          <CardHeader>
-            <CardTitle className="text-2xl">ความคืบหน้า</CardTitle>
-            <CardDescription>
-              จำนวนครั้งที่ผ่าน: {completedSessions} / {minSessions} ครั้ง
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <Progress value={progressPercentage} className="h-3" />
-              <p className="text-sm text-muted-foreground text-center">
-                {completedSessions >= minSessions 
-                  ? "🎉 คุณทำครบจำนวนครั้งที่กำหนดแล้ว!" 
-                  : `อีก ${minSessions - completedSessions} ครั้งเพื่อครบตามเกณฑ์`}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="w-5 h-5" />
-                  อัปโหลดใบ Coaching
-                </CardTitle>
-                <CardDescription>อัปโหลดใบ coaching ของแต่ละครั้ง</CardDescription>
-              </div>
-              <Button 
-                onClick={handleSubmitAll}
-                disabled={sessions.filter(s => s.status === "pending" && s.file_url).length === 0}
-              >
-                ส่งทั้งหมด
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {Array.from({ length: minSessions }, (_, i) => i + 1).map((sessionNum) => {
-                const session = sessions.find(s => s.session_number === sessionNum);
-                const isUploading = uploadingSession === sessionNum;
+        <Tabs defaultValue="coaching" className="w-full">
+          <TabsList className="grid w-full grid-cols-5">
+            <TabsTrigger value="coaching">Coaching</TabsTrigger>
+            <TabsTrigger value="appointment">นัดหมาย</TabsTrigger>
+            <TabsTrigger value="leave">ยื่นลา</TabsTrigger>
+            <TabsTrigger value="room">จองห้อง</TabsTrigger>
+            <TabsTrigger value="event">จัดกิจกรรม</TabsTrigger>
+          </TabsList>
 
-                return (
-                  <Card key={sessionNum} className="relative overflow-hidden">
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-semibold">ครั้งที่ {sessionNum}</h3>
-                        {session && getStatusBadge(session.status)}
-                      </div>
+          <TabsContent value="coaching" className="space-y-6">
+            <Card className="card-hover border-2">
+              <CardHeader>
+                <CardTitle className="text-2xl">ความคืบหน้า</CardTitle>
+                <CardDescription>
+                  จำนวนครั้งที่ผ่าน: {completedSessions} / {minSessions} ครั้ง
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <Progress value={progressPercentage} className="h-3" />
+                  <p className="text-sm text-muted-foreground text-center">
+                    {completedSessions >= minSessions 
+                      ? "🎉 คุณทำครบจำนวนครั้งที่กำหนดแล้ว!" 
+                      : `อีก ${minSessions - completedSessions} ครั้งเพื่อครบตามเกณฑ์`}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
 
-                      {session ? (
-                        <div className="space-y-2">
-                          <p className="text-sm text-muted-foreground truncate">{session.file_name}</p>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full"
-                            onClick={() => viewFile(session.file_url)}
-                          >
-                            ดูไฟล์
-                          </Button>
-                        </div>
-                      ) : (
-                        <div>
-                          <input
-                            type="file"
-                            id={`upload-${sessionNum}`}
-                            accept=".pdf,.jpg,.jpeg,.png"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) handleFileUpload(sessionNum, file);
-                            }}
-                            disabled={isUploading}
-                          />
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full"
-                            onClick={() => document.getElementById(`upload-${sessionNum}`)?.click()}
-                            disabled={isUploading}
-                          >
-                            <Upload className="w-4 h-4 mr-2" />
-                            {isUploading ? "กำลังอัปโหลด..." : "อัปโหลด"}
-                          </Button>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <FileText className="w-5 h-5" />
+                      อัปโหลดใบ Coaching
+                    </CardTitle>
+                    <CardDescription>อัปโหลดใบ coaching ของแต่ละครั้ง</CardDescription>
+                  </div>
+                  <Button 
+                    onClick={handleSubmitAll}
+                    disabled={sessions.filter(s => s.status === "pending" && s.file_url).length === 0}
+                  >
+                    ส่งทั้งหมด
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {Array.from({ length: minSessions }, (_, i) => i + 1).map((sessionNum) => {
+                    const session = sessions.find(s => s.session_number === sessionNum);
+                    const isUploading = uploadingSession === sessionNum;
+
+                    return (
+                      <Card key={sessionNum} className="relative overflow-hidden">
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <h3 className="font-semibold">ครั้งที่ {sessionNum}</h3>
+                            {session && getStatusBadge(session.status)}
+                          </div>
+
+                          {session ? (
+                            <div className="space-y-2">
+                              <p className="text-sm text-muted-foreground truncate">{session.file_name}</p>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full"
+                                onClick={() => viewFile(session.file_url)}
+                              >
+                                ดูไฟล์
+                              </Button>
+                            </div>
+                          ) : (
+                            <div>
+                              <input
+                                type="file"
+                                id={`upload-${sessionNum}`}
+                                accept=".pdf,.jpg,.jpeg,.png"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) handleFileUpload(sessionNum, file);
+                                }}
+                                disabled={isUploading}
+                              />
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full"
+                                onClick={() => document.getElementById(`upload-${sessionNum}`)?.click()}
+                                disabled={isUploading}
+                              >
+                                <Upload className="w-4 h-4 mr-2" />
+                                {isUploading ? "กำลังอัปโหลด..." : "อัปโหลด"}
+                              </Button>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="appointment">
+            <AppointmentManager role="student" userId={user?.id || ""} />
+          </TabsContent>
+
+          <TabsContent value="leave">
+            <LeaveRequestForm userId={user?.id || ""} />
+          </TabsContent>
+
+          <TabsContent value="room">
+            <RoomBookingForm userId={user?.id || ""} />
+          </TabsContent>
+
+          <TabsContent value="event">
+            <EventRequestForm userId={user?.id || ""} />
+          </TabsContent>
+        </Tabs>
       </div>
+      
+      <AIAssistant />
+      <Footer />
     </DashboardLayout>
   );
 }

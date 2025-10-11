@@ -127,16 +127,15 @@ export default function Auth() {
     try {
       registerSchema.parse(registerData);
 
-      // Validate email domain
+      // Validate email domain - เฉพาะนักศึกษาเท่านั้น
       const isStudent = registerData.email.endsWith("@spumail.net");
-      const isTeacher = registerData.email.endsWith("@spu.ac.th");
 
-      if (!isStudent && !isTeacher) {
-        throw new Error("กรุณาใช้อีเมล @spumail.net (นักศึกษา) หรือ @spu.ac.th (อาจารย์)");
+      if (!isStudent) {
+        throw new Error("สามารถลงทะเบียนได้เฉพาะนักศึกษา (@spumail.net) เท่านั้น อาจารย์และ Staff กรุณาติดต่อ Super Admin");
       }
 
-      if (isStudent && (!registerData.studentId || !registerData.groupId)) {
-        throw new Error("นักศึกษาต้องกรอกรหัสนักศึกษาและเลือกกลุ่มเรียน");
+      if (!registerData.studentId || !registerData.groupId) {
+        throw new Error("กรุณากรอกรหัสนักศึกษาและเลือกกลุ่มเรียน");
       }
 
       const { data, error } = await supabase.auth.signUp({
@@ -156,7 +155,7 @@ export default function Auth() {
       if (error) throw error;
 
       // Update profile with additional info
-      if (data.user && isStudent) {
+      if (data.user) {
         await supabase.from("profiles").update({
           student_id: registerData.studentId,
           group_id: registerData.groupId || null,
@@ -296,13 +295,14 @@ export default function Auth() {
               <Input
                 id="register-email"
                 type="email"
-                placeholder="@spumail.net หรือ @spu.ac.th"
+                placeholder="example@spumail.net"
                 value={registerData.email}
                 onChange={(e) => setRegisterData({ ...registerData, email: e.target.value })}
                 required
               />
               <p className="text-xs text-muted-foreground">
-                ใช้ @spumail.net สำหรับนักศึกษา หรือ @spu.ac.th สำหรับอาจารย์
+                ระบบนี้เปิดให้ลงทะเบียนเฉพาะนักศึกษา (@spumail.net) เท่านั้น<br />
+                อาจารย์และ Staff กรุณาติดต่อ Super Admin เพื่อสร้างบัญชี
               </p>
             </div>
             {registerData.email.endsWith("@spumail.net") && (

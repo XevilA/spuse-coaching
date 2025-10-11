@@ -1,0 +1,438 @@
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { DashboardLayout } from "@/components/DashboardLayout";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Shield, Users, FileCheck, Settings, UserPlus, Trash2, Download } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+export default function SuperAdmin() {
+  const [user, setUser] = useState<any>(null);
+  const [profile, setProfile] = useState<any>(null);
+  const [users, setUsers] = useState<any[]>([]);
+  const [groups, setGroups] = useState<any[]>([]);
+  const [totalSessions, setTotalSessions] = useState(0);
+  const [minSessions, setMinSessions] = useState("10");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isAddUserOpen, setIsAddUserOpen] = useState(false);
+  const [newUser, setNewUser] = useState({
+    email: "",
+    password: "",
+    firstName: "",
+    lastName: "",
+    role: "student",
+  });
+  const navigate = useNavigate();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  const checkAuth = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      navigate("/auth");
+      return;
+    }
+
+    const { data: roleData } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", session.user.id)
+      .single();
+
+    if (roleData?.role !== "super_admin") {
+      navigate(`/${roleData?.role || "auth"}`);
+      return;
+    }
+
+    setUser(session.user);
+    fetchData(session.user.id);
+  };
+
+  const fetchData = async (userId: string) => {
+    try {
+      const [profileRes, usersRes, groupsRes, sessionsRes, settingsRes] = await Promise.all([
+        supabase.from("profiles").select("*").eq("id", userId).single(),
+        supabase.from("profiles").select(`*, user_roles (role)`),
+        supabase.from("student_groups").select("*"),
+        supabase.from("coaching_sessions").select("id"),
+        supabase.from("coaching_settings").select("*").eq("key", "min_sessions").single(),
+      ]);
+
+      if (profileRes.data) setProfile(profileRes.data);
+      if (usersRes.data) setUsers(usersRes.data);
+      if (groupsRes.data) setGroups(groupsRes.data);
+      if (sessionsRes.data) setTotalSessions(sessionsRes.data.length);
+      if (settingsRes.data) setMinSessions(settingsRes.data.value);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const updateSettings = async () => {
+    try {
+      const { error } = await supabase
+        .from("coaching_settings")
+        .update({ value: minSessions })
+        .eq("key", "min_sessions");
+
+      if (error) throw error;
+
+      toast({
+        title: "บันทึกสำเร็จ",
+        description: "อัปเดตการตั้งค่าแล้ว",
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+      });
+    }
+  };
+
+  const handleAddUser = async () => {
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: newUser.email,
+        password: newUser.password,
+        options: {
+          data: {
+            first_name: newUser.firstName,
+            last_name: newUser.lastName,
+          },
+        },
+      });
+
+      if (error) throw error;
+
+      if (data.user) {
+        const { error: roleError } = await supabase
+          .from("user_roles")
+          .update({ role: newUser.role as "student" | "teacher" | "admin" | "super_admin" })
+          .eq("user_id", data.user.id);
+
+        if (roleError) throw roleError;
+      }
+
+      toast({
+        title: "เพิ่มผู้ใช้สำเร็จ",
+        description: `เพิ่ม ${newUser.email} แล้ว`,
+      });
+
+      setIsAddUserOpen(false);
+      setNewUser({ email: "", password: "", firstName: "", lastName: "", role: "student" });
+      if (user) fetchData(user.id);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "ไม่สามารถเพิ่มผู้ใช้ได้",
+        description: error.message,
+      });
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm("ต้องการลบผู้ใช้นี้หรือไม่?")) return;
+
+    try {
+      // Delete user_roles first
+      await supabase.from("user_roles").delete().eq("user_id", userId);
+      
+      // Delete profile
+      const { error } = await supabase.from("profiles").delete().eq("id", userId);
+      if (error) throw error;
+
+      toast({
+        title: "ลบผู้ใช้สำเร็จ",
+      });
+
+      if (user) fetchData(user.id);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "ไม่สามารถลบผู้ใช้ได้",
+        description: error.message,
+      });
+    }
+  };
+
+  const exportReport = () => {
+    const csv = [
+      ["Email", "ชื่อ", "นามสกุล", "บทบาท", "รหัสนักศึกษา", "รหัสพนักงาน"],
+      ...users.map(u => [
+        u.email,
+        u.first_name,
+        u.last_name,
+        u.user_roles?.[0]?.role || "-",
+        u.student_id || "-",
+        u.employee_id || "-",
+      ])
+    ].map(row => row.join(",")).join("\n");
+
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `super-admin-report-${new Date().toISOString().split("T")[0]}.csv`;
+    link.click();
+
+    toast({
+      title: "ส่งออกสำเร็จ",
+      description: "ดาวน์โหลดรายงานแล้ว",
+    });
+  };
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center min-h-screen">กำลังโหลด...</div>;
+  }
+
+  const studentCount = users.filter(u => u.user_roles?.[0]?.role === "student").length;
+  const teacherCount = users.filter(u => u.user_roles?.[0]?.role === "teacher").length;
+  const adminCount = users.filter(u => u.user_roles?.[0]?.role === "admin").length;
+
+  return (
+    <DashboardLayout role="super_admin" userName={`${profile?.first_name || ""} ${profile?.last_name || ""}`}>
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">นักศึกษา</CardTitle>
+              <Users className="w-4 h-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">{studentCount}</div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">อาจารย์</CardTitle>
+              <Shield className="w-4 h-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">{teacherCount}</div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">ผู้ดูแลระบบ</CardTitle>
+              <Shield className="w-4 h-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">{adminCount}</div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">ใบ Coaching</CardTitle>
+              <FileCheck className="w-4 h-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">{totalSessions}</div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Tabs defaultValue="users" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="users">จัดการผู้ใช้</TabsTrigger>
+            <TabsTrigger value="settings">ตั้งค่าระบบ</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="users" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Users className="w-5 h-5" />
+                      จัดการผู้ใช้งานทั้งหมด
+                    </CardTitle>
+                    <CardDescription>เพิ่ม แก้ไข หรือลบผู้ใช้งานในระบบ</CardDescription>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={exportReport}>
+                      <Download className="w-4 h-4 mr-2" />
+                      ส่งออก CSV
+                    </Button>
+                    <Dialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen}>
+                      <DialogTrigger asChild>
+                        <Button>
+                          <UserPlus className="w-4 h-4 mr-2" />
+                          เพิ่มผู้ใช้
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>เพิ่มผู้ใช้ใหม่</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label>ชื่อ</Label>
+                              <Input
+                                value={newUser.firstName}
+                                onChange={(e) => setNewUser({ ...newUser, firstName: e.target.value })}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>นามสกุล</Label>
+                              <Input
+                                value={newUser.lastName}
+                                onChange={(e) => setNewUser({ ...newUser, lastName: e.target.value })}
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>อีเมล</Label>
+                            <Input
+                              type="email"
+                              value={newUser.email}
+                              onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>รหัสผ่าน</Label>
+                            <Input
+                              type="password"
+                              value={newUser.password}
+                              onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>บทบาท</Label>
+                            <Select value={newUser.role} onValueChange={(value) => setNewUser({ ...newUser, role: value })}>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="student">นักศึกษา</SelectItem>
+                                <SelectItem value="teacher">อาจารย์</SelectItem>
+                                <SelectItem value="admin">ผู้ดูแลระบบ</SelectItem>
+                                <SelectItem value="super_admin">Super Admin</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <Button className="w-full" onClick={handleAddUser}>เพิ่มผู้ใช้</Button>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>อีเมล</TableHead>
+                      <TableHead>ชื่อ-นามสกุล</TableHead>
+                      <TableHead>บทบาท</TableHead>
+                      <TableHead>รหัส</TableHead>
+                      <TableHead className="text-right">ดำเนินการ</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {users.map((u: any) => (
+                      <TableRow key={u.id}>
+                        <TableCell className="font-medium">{u.email}</TableCell>
+                        <TableCell>{`${u.first_name} ${u.last_name}`}</TableCell>
+                        <TableCell>
+                          {u.user_roles?.[0]?.role === "super_admin" ? "Super Admin" :
+                           u.user_roles?.[0]?.role === "admin" ? "ผู้ดูแลระบบ" : 
+                           u.user_roles?.[0]?.role === "teacher" ? "อาจารย์" : "นักศึกษา"}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {u.student_id || u.employee_id || "-"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteUser(u.id)}
+                            disabled={u.id === user?.id}
+                          >
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="settings" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Settings className="w-5 h-5" />
+                  ตั้งค่าระบบ
+                </CardTitle>
+                <CardDescription>กำหนดค่าต่างๆ ของระบบ</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="minSessions">จำนวนครั้งขั้นต่ำสำหรับ Coaching</Label>
+                  <Input
+                    id="minSessions"
+                    type="number"
+                    value={minSessions}
+                    onChange={(e) => setMinSessions(e.target.value)}
+                  />
+                </div>
+                <Button onClick={updateSettings}>
+                  บันทึกการตั้งค่า
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>กลุ่มนักศึกษา</CardTitle>
+                <CardDescription>จำนวน: {groups.length} กลุ่ม</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>ชื่อกลุ่ม</TableHead>
+                      <TableHead>สาขา</TableHead>
+                      <TableHead>ชั้นปี</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {groups.map((group: any) => (
+                      <TableRow key={group.id}>
+                        <TableCell className="font-medium">{group.name}</TableCell>
+                        <TableCell>{group.major}</TableCell>
+                        <TableCell>{group.year_level}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </DashboardLayout>
+  );
+}

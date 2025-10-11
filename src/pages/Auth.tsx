@@ -87,7 +87,9 @@ export default function Auth() {
         .eq("user_id", data.user.id)
         .single();
 
-      if (roleData?.role === "super_admin" || roleData?.role === "admin") {
+      if (roleData?.role === "super_admin") {
+        navigate("/super-admin");
+      } else if (roleData?.role === "admin") {
         navigate("/admin");
       } else if (roleData?.role === "teacher") {
         navigate("/teacher");

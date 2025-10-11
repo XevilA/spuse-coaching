@@ -29,10 +29,18 @@ export const DashboardLayout = ({ children, role, userName }: DashboardLayoutPro
   };
 
   const getRoleLabel = () => {
-    if (role === "student") return "นักศึกษา";
-    if (role === "teacher") return "อาจารย์";
-    if (role === "super_admin") return "Super Admin";
-    return "ผู้ดูแลระบบ";
+    switch (role) {
+      case "super_admin":
+        return "Super Admin";
+      case "admin":
+        return "ผู้ดูแลระบบ";
+      case "teacher":
+        return "อาจารย์";
+      case "student":
+        return "นักศึกษา";
+      default:
+        return role;
+    }
   };
 
   return (

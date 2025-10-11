@@ -38,8 +38,9 @@ export default function Teacher() {
       .eq("user_id", session.user.id)
       .single();
 
-    if (roleData?.role !== "teacher" && roleData?.role !== "admin") {
-      navigate(`/${roleData?.role || "auth"}`);
+    if (roleData?.role !== "teacher" && roleData?.role !== "admin" && roleData?.role !== "super_admin") {
+      const redirectPath = roleData?.role === "student" ? "/student" : "/auth";
+      navigate(redirectPath);
       return;
     }
 

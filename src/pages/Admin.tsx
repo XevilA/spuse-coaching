@@ -45,8 +45,9 @@ export default function Admin() {
       .eq("user_id", session.user.id)
       .single();
 
-    if (roleData?.role !== "admin") {
-      navigate(`/${roleData?.role || "auth"}`);
+    if (roleData?.role !== "admin" && roleData?.role !== "super_admin") {
+      const redirectPath = roleData?.role === "teacher" ? "/teacher" : roleData?.role === "student" ? "/student" : "/auth";
+      navigate(redirectPath);
       return;
     }
 

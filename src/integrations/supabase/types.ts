@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      appointments: {
+        Row: {
+          appointment_date: string
+          created_at: string | null
+          end_time: string
+          id: string
+          notes: string | null
+          start_time: string
+          status: string
+          student_id: string | null
+          teacher_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          appointment_date: string
+          created_at?: string | null
+          end_time: string
+          id?: string
+          notes?: string | null
+          start_time: string
+          status?: string
+          student_id?: string | null
+          teacher_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          appointment_date?: string
+          created_at?: string | null
+          end_time?: string
+          id?: string
+          notes?: string | null
+          start_time?: string
+          status?: string
+          student_id?: string | null
+          teacher_id?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       coaching_sessions: {
         Row: {
           analysis_data: Json | null
@@ -115,12 +154,43 @@ export type Database = {
           },
         ]
       }
+      line_notifications: {
+        Row: {
+          channel_access_token: string | null
+          created_at: string | null
+          enabled: boolean | null
+          group_id: string | null
+          id: string
+          notification_type: string
+          updated_at: string | null
+        }
+        Insert: {
+          channel_access_token?: string | null
+          created_at?: string | null
+          enabled?: boolean | null
+          group_id?: string | null
+          id?: string
+          notification_type: string
+          updated_at?: string | null
+        }
+        Update: {
+          channel_access_token?: string | null
+          created_at?: string | null
+          enabled?: boolean | null
+          group_id?: string | null
+          id?: string
+          notification_type?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string | null
           email: string
           employee_id: string | null
           first_name: string
+          group_id: string | null
           id: string
           last_name: string
           major: string | null
@@ -134,6 +204,7 @@ export type Database = {
           email: string
           employee_id?: string | null
           first_name: string
+          group_id?: string | null
           id: string
           last_name: string
           major?: string | null
@@ -147,6 +218,7 @@ export type Database = {
           email?: string
           employee_id?: string | null
           first_name?: string
+          group_id?: string | null
           id?: string
           last_name?: string
           major?: string | null
@@ -155,7 +227,15 @@ export type Database = {
           updated_at?: string | null
           year_level?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "student_groups"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       student_groups: {
         Row: {

@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AppointmentCalendar } from "@/components/AppointmentCalendar";
 
 export default function SuperAdmin() {
   const [user, setUser] = useState<any>(null);
@@ -208,6 +209,7 @@ export default function SuperAdmin() {
   return (
     <DashboardLayout role="super_admin" userName={`${profile?.first_name || ""} ${profile?.last_name || ""}`}>
       <div className="space-y-6">
+        <AppointmentCalendar role="super_admin" userId={user?.id || ""} />
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">

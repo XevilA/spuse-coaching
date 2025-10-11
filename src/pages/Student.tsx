@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
+import { AppointmentManager } from "@/components/AppointmentManager";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -134,6 +135,7 @@ export default function Student() {
   return (
     <DashboardLayout role="student" userName={`${profile?.first_name} ${profile?.last_name}`}>
       <div className="space-y-6">
+        <AppointmentManager role="student" userId={user?.id || ""} />
         <Card className="card-hover border-2">
           <CardHeader>
             <CardTitle className="text-2xl">ความคืบหน้า</CardTitle>

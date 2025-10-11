@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { AuthLayout } from "@/components/AuthLayout";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,8 @@ const loginSchema = z.object({
 const registerSchema = loginSchema.extend({
   firstName: z.string().min(1, "กรุณากรอกชื่อ"),
   lastName: z.string().min(1, "กรุณากรอกนามสกุล"),
+  studentId: z.string().optional(),
+  groupId: z.string().optional(),
   confirmPassword: z.string(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "รหัสผ่านไม่ตรงกัน",
@@ -35,7 +37,10 @@ export default function Auth() {
     confirmPassword: "",
     firstName: "",
     lastName: "",
+    studentId: "",
+    groupId: "",
   });
+  const [groups, setGroups] = useState<any[]>([]);
 
   const handleGoogleLogin = async () => {
     try {
@@ -60,6 +65,14 @@ export default function Auth() {
       });
     }
   };
+
+  useEffect(() => {
+    const fetchGroups = async () => {
+      const { data } = await supabase.from("student_groups").select("*");
+      if (data) setGroups(data);
+    };
+    fetchGroups();
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,7 +135,11 @@ export default function Auth() {
         throw new Error("กรุณาใช้อีเมล @spumail.net (นักศึกษา) หรือ @spu.ac.th (อาจารย์)");
       }
 
-      const { error } = await supabase.auth.signUp({
+      if (isStudent && (!registerData.studentId || !registerData.groupId)) {
+        throw new Error("นักศึกษาต้องกรอกรหัสนักศึกษาและเลือกกลุ่มเรียน");
+      }
+
+      const { data, error } = await supabase.auth.signUp({
         email: registerData.email,
         password: registerData.password,
         options: {
@@ -130,11 +147,21 @@ export default function Auth() {
           data: {
             first_name: registerData.firstName,
             last_name: registerData.lastName,
+            student_id: registerData.studentId,
+            group_id: registerData.groupId,
           },
         },
       });
 
       if (error) throw error;
+
+      // Update profile with additional info
+      if (data.user && isStudent) {
+        await supabase.from("profiles").update({
+          student_id: registerData.studentId,
+          group_id: registerData.groupId || null,
+        }).eq("id", data.user.id);
+      }
 
       toast({
         title: "ลงทะเบียนสำเร็จ",
@@ -278,6 +305,37 @@ export default function Auth() {
                 ใช้ @spumail.net สำหรับนักศึกษา หรือ @spu.ac.th สำหรับอาจารย์
               </p>
             </div>
+            {registerData.email.endsWith("@spumail.net") && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="studentId">รหัสนักศึกษา</Label>
+                  <Input
+                    id="studentId"
+                    value={registerData.studentId}
+                    onChange={(e) => setRegisterData({ ...registerData, studentId: e.target.value })}
+                    placeholder="รหัสนักศึกษา"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="groupId">กลุ่มเรียน</Label>
+                  <select
+                    id="groupId"
+                    className="w-full px-3 py-2 border border-input rounded-md bg-background"
+                    value={registerData.groupId}
+                    onChange={(e) => setRegisterData({ ...registerData, groupId: e.target.value })}
+                    required
+                  >
+                    <option value="">เลือกกลุ่มเรียน</option>
+                    {groups.map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {group.name} - {group.major} ชั้นปีที่ {group.year_level}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
             <div className="space-y-2">
               <Label htmlFor="register-password">รหัสผ่าน</Label>
               <Input

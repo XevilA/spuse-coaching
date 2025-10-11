@@ -1,1 +1,7 @@
 project_id = "tqkmnnhhvbmkssgicbpa"
+
+[functions.analyze-coaching-form]
+verify_jwt = false
+
+[functions.send-line-notification]
+verify_jwt = true

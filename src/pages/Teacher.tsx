@@ -9,6 +9,8 @@ import { CheckCircle, XCircle, Eye, Users, FileCheck } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AppointmentCalendar } from "@/components/AppointmentCalendar";
+import { AppointmentManager } from "@/components/AppointmentManager";
 import { Textarea } from "@/components/ui/textarea";
 
 export default function Teacher() {
@@ -135,6 +137,8 @@ export default function Teacher() {
   return (
     <DashboardLayout role="teacher" userName={`${profile?.first_name || ""} ${profile?.last_name || ""}`}>
       <div className="space-y-6">
+        <AppointmentCalendar role="teacher" userId={user?.id || ""} />
+        <AppointmentManager role="teacher" userId={user?.id || ""} />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">

@@ -26,12 +26,40 @@ export default function Teacher() {
   const [groupMembers, setGroupMembers] = useState<any[]>([]);
   const [allStudents, setAllStudents] = useState<any[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+  const [signedUrl, setSignedUrl] = useState<string>("");
   const navigate = useNavigate();
   const { toast } = useToast();
 
   useEffect(() => {
     checkAuth();
   }, []);
+
+  useEffect(() => {
+    if (selectedSession?.file_url) {
+      getSignedUrl(selectedSession.file_url);
+    } else {
+      setSignedUrl("");
+    }
+  }, [selectedSession]);
+
+  const getSignedUrl = async (fileUrl: string) => {
+    try {
+      const { data, error } = await supabase.storage
+        .from("coaching-forms")
+        .createSignedUrl(fileUrl, 3600);
+
+      if (error) throw error;
+      if (data?.signedUrl) {
+        setSignedUrl(data.signedUrl);
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "ไม่สามารถโหลดไฟล์ได้",
+        description: error.message,
+      });
+    }
+  };
 
   const checkAuth = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -436,11 +464,17 @@ export default function Teacher() {
           {selectedSession && (
             <div className="space-y-4">
               <div className="aspect-video bg-muted rounded-lg overflow-hidden">
-                <iframe
-                  src={selectedSession.file_url}
-                  className="w-full h-full"
-                  title="Coaching Form"
-                />
+                {signedUrl ? (
+                  <iframe
+                    src={signedUrl}
+                    className="w-full h-full"
+                    title="Coaching Form"
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-full">
+                    <p className="text-muted-foreground">กำลังโหลดไฟล์...</p>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">

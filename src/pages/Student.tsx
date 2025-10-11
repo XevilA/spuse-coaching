@@ -82,16 +82,12 @@ export default function Student() {
 
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from("coaching-forms")
-        .getPublicUrl(fileName);
-
       const { error: dbError } = await supabase
         .from("coaching_sessions")
         .upsert({
           student_id: user.id,
           session_number: sessionNumber,
-          file_url: publicUrl,
+          file_url: fileName,
           file_name: file.name,
           status: "pending",
         });
@@ -112,6 +108,62 @@ export default function Student() {
       });
     } finally {
       setUploadingSession(null);
+    }
+  };
+
+  const handleSubmitAll = async () => {
+    if (!user) return;
+
+    const pendingSessions = sessions.filter(s => s.status === "pending" && s.file_url);
+    
+    if (pendingSessions.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "ไม่มีไฟล์ที่จะส่ง",
+        description: "กรุณาอัปโหลดไฟล์ก่อนส่ง",
+      });
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("coaching_sessions")
+        .update({ status: "pending" })
+        .in("id", pendingSessions.map(s => s.id));
+
+      if (error) throw error;
+
+      toast({
+        title: "ส่งสำเร็จ",
+        description: `ส่งใบ coaching ${pendingSessions.length} ไฟล์เพื่อตรวจสอบแล้ว`,
+      });
+
+      fetchData(user.id);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "ไม่สามารถส่งได้",
+        description: error.message,
+      });
+    }
+  };
+
+  const viewFile = async (fileUrl: string) => {
+    try {
+      const { data, error } = await supabase.storage
+        .from("coaching-forms")
+        .createSignedUrl(fileUrl, 60);
+
+      if (error) throw error;
+      if (data?.signedUrl) {
+        window.open(data.signedUrl, "_blank");
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "ไม่สามารถเปิดไฟล์ได้",
+        description: error.message,
+      });
     }
   };
 
@@ -157,11 +209,21 @@ export default function Student() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="w-5 h-5" />
-              อัปโหลดใบ Coaching
-            </CardTitle>
-            <CardDescription>อัปโหลดใบ coaching ของแต่ละครั้ง</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="w-5 h-5" />
+                  อัปโหลดใบ Coaching
+                </CardTitle>
+                <CardDescription>อัปโหลดใบ coaching ของแต่ละครั้ง</CardDescription>
+              </div>
+              <Button 
+                onClick={handleSubmitAll}
+                disabled={sessions.filter(s => s.status === "pending" && s.file_url).length === 0}
+              >
+                ส่งทั้งหมด
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -184,7 +246,7 @@ export default function Student() {
                             variant="outline"
                             size="sm"
                             className="w-full"
-                            onClick={() => window.open(session.file_url, "_blank")}
+                            onClick={() => viewFile(session.file_url)}
                           >
                             ดูไฟล์
                           </Button>

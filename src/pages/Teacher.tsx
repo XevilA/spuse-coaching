@@ -1,17 +1,19 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CheckCircle, XCircle, Eye, Users, FileCheck } from "lucide-react";
+import { CheckCircle, XCircle, Eye, Users, FileCheck, UserPlus, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AppointmentCalendar } from "@/components/AppointmentCalendar";
 import { AppointmentManager } from "@/components/AppointmentManager";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function Teacher() {
   const [user, setUser] = useState<any>(null);
@@ -20,6 +22,10 @@ export default function Teacher() {
   const [selectedSession, setSelectedSession] = useState<any>(null);
   const [reviewNotes, setReviewNotes] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [assignedGroups, setAssignedGroups] = useState<any[]>([]);
+  const [groupMembers, setGroupMembers] = useState<any[]>([]);
+  const [allStudents, setAllStudents] = useState<any[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -55,33 +61,45 @@ export default function Teacher() {
       const { data: profileRes } = await supabase.from("profiles").select("*").eq("id", user?.id || "").single();
       if (profileRes) setProfile(profileRes);
 
-      // Get teacher's assigned groups
+      // Get teacher's assigned groups with group details
       const { data: assignments } = await supabase
         .from("teacher_assignments")
-        .select("group_id")
+        .select("*, student_groups(*)")
         .eq("teacher_id", user?.id || "");
 
       if (!assignments || assignments.length === 0) {
         setStudents([]);
+        setAssignedGroups([]);
         setIsLoading(false);
         return;
       }
 
+      setAssignedGroups(assignments);
       const groupIds = assignments.map(a => a.group_id);
 
-      // Get students in assigned groups
-      const { data: groupMembers } = await supabase
+      // Get students in assigned groups with member details
+      const { data: members } = await supabase
         .from("group_members")
-        .select("student_id")
+        .select("*, profiles!group_members_student_id_fkey(id, first_name, last_name, student_id)")
         .in("group_id", groupIds);
 
-      if (!groupMembers || groupMembers.length === 0) {
+      if (members) setGroupMembers(members);
+
+      // Get all students for adding to groups
+      const { data: studentsData } = await supabase
+        .from("profiles")
+        .select("*, user_roles!inner(role)")
+        .eq("user_roles.role", "student");
+
+      if (studentsData) setAllStudents(studentsData);
+
+      if (!members || members.length === 0) {
         setStudents([]);
         setIsLoading(false);
         return;
       }
 
-      const studentIds = groupMembers.map(m => m.student_id);
+      const studentIds = members.map(m => m.student_id);
 
       // Get coaching sessions for students in assigned groups only
       const { data: sessionsData } = await supabase
@@ -157,6 +175,65 @@ export default function Teacher() {
     }
   };
 
+  const handleAddStudentToGroup = async (groupId: string, studentId: string) => {
+    try {
+      const { error } = await supabase
+        .from("group_members")
+        .insert({ group_id: groupId, student_id: studentId });
+
+      if (error) throw error;
+
+      // Update student's group_id in profiles
+      await supabase
+        .from("profiles")
+        .update({ group_id: groupId })
+        .eq("id", studentId);
+
+      toast({
+        title: "เพิ่มนักศึกษาสำเร็จ",
+      });
+
+      fetchData();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+      });
+    }
+  };
+
+  const handleRemoveStudentFromGroup = async (memberId: string, studentId: string) => {
+    if (!confirm("ต้องการลบนักศึกษาออกจากกลุ่มนี้หรือไม่?")) return;
+
+    try {
+      const { error } = await supabase
+        .from("group_members")
+        .delete()
+        .eq("id", memberId);
+
+      if (error) throw error;
+
+      // Clear student's group_id in profiles
+      await supabase
+        .from("profiles")
+        .update({ group_id: null })
+        .eq("id", studentId);
+
+      toast({
+        title: "ลบนักศึกษาสำเร็จ",
+      });
+
+      fetchData();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+      });
+    }
+  };
+
   const totalSessions = students.reduce((sum, s) => sum + s.sessions.length, 0);
   const totalPending = students.reduce((sum, s) => sum + s.pendingCount, 0);
 
@@ -166,10 +243,15 @@ export default function Teacher() {
 
   return (
     <DashboardLayout role="teacher" userName={`${profile?.first_name || ""} ${profile?.last_name || ""}`}>
-      <div className="space-y-6">
-        <AppointmentCalendar role="teacher" userId={user?.id || ""} />
-        <AppointmentManager role="teacher" userId={user?.id || ""} />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <Tabs defaultValue="students" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="students">นักศึกษา</TabsTrigger>
+          <TabsTrigger value="groups">กลุ่มเรียน</TabsTrigger>
+          <TabsTrigger value="appointments">นัดหมาย</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="students" className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">จำนวนนักศึกษา</CardTitle>
@@ -252,7 +334,99 @@ export default function Teacher() {
             </Table>
           </CardContent>
         </Card>
-      </div>
+        </TabsContent>
+
+        <TabsContent value="groups" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>กลุ่มเรียนที่รับผิดชอบ</CardTitle>
+              <CardDescription>จัดการนักศึกษาในกลุ่มของคุณ</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ชื่อกลุ่ม</TableHead>
+                    <TableHead>สาขา</TableHead>
+                    <TableHead>ชั้นปี</TableHead>
+                    <TableHead>จำนวนนักศึกษา</TableHead>
+                    <TableHead className="text-right">ดำเนินการ</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {assignedGroups.map((assignment: any) => (
+                    <React.Fragment key={assignment.id}>
+                      <TableRow>
+                        <TableCell className="font-medium">{assignment.student_groups?.name}</TableCell>
+                        <TableCell>{assignment.student_groups?.major}</TableCell>
+                        <TableCell>{assignment.student_groups?.year_level}</TableCell>
+                        <TableCell>
+                          {groupMembers.filter(m => m.group_id === assignment.group_id).length} คน
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setSelectedGroup(selectedGroup === assignment.group_id ? null : assignment.group_id)}
+                          >
+                            {selectedGroup === assignment.group_id ? "ซ่อน" : "จัดการ"}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                      {selectedGroup === assignment.group_id && (
+                        <TableRow>
+                          <TableCell colSpan={5}>
+                            <div className="p-4 space-y-4 bg-muted/50 rounded-lg">
+                              <div className="space-y-2">
+                                <h4 className="font-semibold">นักศึกษาในกลุ่ม</h4>
+                                <div className="flex gap-2 flex-wrap">
+                                  {groupMembers
+                                    .filter(m => m.group_id === assignment.group_id)
+                                    .map(member => (
+                                      <Badge key={member.id} variant="outline" className="gap-2">
+                                        {member.profiles?.first_name} {member.profiles?.last_name}
+                                        ({member.profiles?.student_id})
+                                        <button
+                                          onClick={() => handleRemoveStudentFromGroup(member.id, member.student_id)}
+                                          className="ml-1 hover:text-destructive"
+                                        >
+                                          ✕
+                                        </button>
+                                      </Badge>
+                                    ))}
+                                </div>
+                                <Select onValueChange={(studentId) => handleAddStudentToGroup(assignment.group_id, studentId)}>
+                                  <SelectTrigger className="w-[300px]">
+                                    <SelectValue placeholder="เพิ่มนักศึกษา" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {allStudents
+                                      .filter(s => !groupMembers.some(m => m.student_id === s.id && m.group_id === assignment.group_id))
+                                      .map(s => (
+                                        <SelectItem key={s.id} value={s.id}>
+                                          {s.first_name} {s.last_name} ({s.student_id})
+                                        </SelectItem>
+                                      ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="appointments" className="space-y-6">
+          <AppointmentCalendar role="teacher" userId={user?.id || ""} />
+          <AppointmentManager role="teacher" userId={user?.id || ""} />
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={!!selectedSession} onOpenChange={() => setSelectedSession(null)}>
         <DialogContent className="max-w-3xl">

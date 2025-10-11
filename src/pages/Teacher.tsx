@@ -1,221 +1,127 @@
-import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { DashboardLayout } from "@/components/DashboardLayout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CheckCircle, XCircle, Eye, Users, FileCheck, UserPlus, Trash2, Download } from "lucide-react";
-import { exportToPDF, exportToExcel, exportToCSV } from "@/utils/exportUtils";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useNavigate } from "react-router-dom";
+import { DashboardLayout } from "@/components/DashboardLayout";
 import { AppointmentCalendar } from "@/components/AppointmentCalendar";
 import { AppointmentManager } from "@/components/AppointmentManager";
-import { Textarea } from "@/components/ui/textarea";
+import { LINENotificationSender } from "@/components/LINENotificationSender";
+import { AIAssistant } from "@/components/AIAssistant";
+import { Footer } from "@/components/Footer";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { FileText, Calendar, MessageSquare, Users, ClipboardCheck } from "lucide-react";
 
-export default function Teacher() {
+const Teacher = () => {
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
-  const [students, setStudents] = useState<any[]>([]);
-  const [selectedSession, setSelectedSession] = useState<any>(null);
-  const [reviewNotes, setReviewNotes] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [assignedGroups, setAssignedGroups] = useState<any[]>([]);
-  const [groupMembers, setGroupMembers] = useState<any[]>([]);
-  const [allStudents, setAllStudents] = useState<any[]>([]);
-  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
-  const [signedUrl, setSignedUrl] = useState<string>("");
-  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
+  const [roomBookings, setRoomBookings] = useState<any[]>([]);
+  const [eventRequests, setEventRequests] = useState<any[]>([]);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   useEffect(() => {
     checkAuth();
   }, []);
 
-  useEffect(() => {
-    if (!user) return;
-
-    // Setup realtime subscription for coaching sessions and group changes
-    const channel = supabase
-      .channel('teacher-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'coaching_sessions'
-        },
-        () => {
-          fetchData();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'group_members'
-        },
-        () => {
-          fetchData();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user]);
-
-  useEffect(() => {
-    if (selectedSession?.file_url) {
-      getSignedUrl(selectedSession.file_url);
-    } else {
-      setSignedUrl("");
-    }
-  }, [selectedSession]);
-
-  const getSignedUrl = async (fileUrl: string) => {
-    try {
-      const { data, error } = await supabase.storage
-        .from("coaching-forms")
-        .createSignedUrl(fileUrl, 3600);
-
-      if (error) throw error;
-      if (data?.signedUrl) {
-        setSignedUrl(data.signedUrl);
-      }
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "ไม่สามารถโหลดไฟล์ได้",
-        description: error.message,
-      });
-    }
-  };
-
   const checkAuth = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        navigate("/auth");
+        return;
+      }
+
+      const { data: roles } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .single();
+
+      if (roles?.role !== "teacher") {
+        navigate("/");
+        return;
+      }
+
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+
+      setUser(user);
+      setProfile(profileData);
+      fetchData(user.id);
+    } catch (error) {
+      console.error("Error checking auth:", error);
       navigate("/auth");
-      return;
+    } finally {
+      setLoading(false);
     }
-
-    const { data: roleData } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", session.user.id)
-      .single();
-
-    if (roleData?.role !== "teacher" && roleData?.role !== "admin" && roleData?.role !== "super_admin") {
-      const redirectPath = roleData?.role === "student" ? "/student" : "/auth";
-      navigate(redirectPath);
-      return;
-    }
-
-    setUser(session.user);
-    fetchData();
   };
 
-  const fetchData = async () => {
+  const fetchData = async (teacherId: string) => {
     try {
-      const { data: profileRes } = await supabase.from("profiles").select("*").eq("id", user?.id || "").single();
-      if (profileRes) setProfile(profileRes);
-
-      // Get teacher's assigned groups with group details
-      const { data: assignments } = await supabase
-        .from("teacher_assignments")
-        .select("*, student_groups(*)")
-        .eq("teacher_id", user?.id || "");
-
-      if (!assignments || assignments.length === 0) {
-        setStudents([]);
-        setAssignedGroups([]);
-        setIsLoading(false);
-        return;
-      }
-
-      setAssignedGroups(assignments);
-      const groupIds = assignments.map(a => a.group_id);
-
-      // Get students in assigned groups with member details
-      const { data: members } = await supabase
-        .from("group_members")
-        .select("*, profiles!group_members_student_id_fkey(id, first_name, last_name, student_id)")
-        .in("group_id", groupIds);
-
-      if (members) setGroupMembers(members);
-
-      // Get all students for adding to groups
-      const { data: studentsData } = await supabase
-        .from("profiles")
-        .select("*, user_roles!inner(role)")
-        .eq("user_roles.role", "student");
-
-      if (studentsData) setAllStudents(studentsData);
-
-      if (!members || members.length === 0) {
-        setStudents([]);
-        setIsLoading(false);
-        return;
-      }
-
-      const studentIds = members.map(m => m.student_id);
-
-      // Get coaching sessions for students in assigned groups only
       const { data: sessionsData } = await supabase
         .from("coaching_sessions")
         .select(`
           *,
-          profiles!coaching_sessions_student_id_fkey (
-            first_name,
-            last_name,
-            student_id
-          )
+          student:profiles!coaching_sessions_student_id_fkey(first_name, last_name, student_id)
         `)
-        .in("student_id", studentIds)
+        .eq("status", "pending")
         .order("created_at", { ascending: false });
 
-      if (sessionsData) {
-        const grouped = sessionsData.reduce((acc: any, session: any) => {
-          const studentId = session.student_id;
-          if (!acc[studentId]) {
-            acc[studentId] = {
-              studentInfo: session.profiles,
-              sessions: [],
-              completedCount: 0,
-              pendingCount: 0,
-            };
-          }
-          acc[studentId].sessions.push(session);
-          if (session.status === "approved") acc[studentId].completedCount++;
-          if (session.status === "pending") acc[studentId].pendingCount++;
-          return acc;
-        }, {});
+      setSessions(sessionsData || []);
 
-        setStudents(Object.values(grouped));
-      }
+      const { data: leaveData } = await supabase
+        .from("leave_requests")
+        .select(`
+          *,
+          student:profiles!leave_requests_student_id_fkey(first_name, last_name, student_id)
+        `)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
+
+      setLeaveRequests(leaveData || []);
+
+      const { data: roomData } = await supabase
+        .from("room_bookings")
+        .select(`
+          *,
+          student:profiles!room_bookings_student_id_fkey(first_name, last_name, student_id)
+        `)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
+
+      setRoomBookings(roomData || []);
+
+      const { data: eventData } = await supabase
+        .from("event_requests")
+        .select(`
+          *,
+          student:profiles!event_requests_student_id_fkey(first_name, last_name, student_id)
+        `)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
+
+      setEventRequests(eventData || []);
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "เกิดข้อผิดพลาด",
-        description: error.message,
-      });
-    } finally {
-      setIsLoading(false);
+      console.error("Error fetching data:", error);
     }
   };
 
-  const handleReview = async (sessionId: string, status: "approved" | "rejected") => {
+  const handleApproveSession = async (sessionId: string, action: "approved" | "rejected") => {
     try {
       const { error } = await supabase
         .from("coaching_sessions")
         .update({
-          status,
-          notes: reviewNotes,
+          status: action,
+          reviewed_by: user.id,
           reviewed_at: new Date().toISOString(),
         })
         .eq("id", sessionId);
@@ -223,13 +129,11 @@ export default function Teacher() {
       if (error) throw error;
 
       toast({
-        title: "บันทึกสำเร็จ",
-        description: status === "approved" ? "อนุมัติใบ coaching แล้ว" : "ไม่อนุมัติใบ coaching",
+        title: "สำเร็จ",
+        description: `${action === "approved" ? "อนุมัติ" : "ไม่อนุมัติ"}ใบ coaching แล้ว`,
       });
 
-      setSelectedSession(null);
-      setReviewNotes("");
-      fetchData();
+      fetchData(user.id);
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -239,25 +143,29 @@ export default function Teacher() {
     }
   };
 
-  const handleAddStudentToGroup = async (groupId: string, studentId: string) => {
+  const handleReviewRequest = async (
+    table: "leave_requests" | "room_bookings" | "event_requests",
+    requestId: string,
+    action: "approved" | "rejected"
+  ) => {
     try {
       const { error } = await supabase
-        .from("group_members")
-        .insert({ group_id: groupId, student_id: studentId });
+        .from(table)
+        .update({
+          status: action,
+          reviewed_by: user.id,
+          reviewed_at: new Date().toISOString(),
+        })
+        .eq("id", requestId);
 
       if (error) throw error;
 
-      // Update student's group_id in profiles
-      await supabase
-        .from("profiles")
-        .update({ group_id: groupId })
-        .eq("id", studentId);
-
       toast({
-        title: "เพิ่มนักศึกษาสำเร็จ",
+        title: "สำเร็จ",
+        description: `${action === "approved" ? "อนุมัติ" : "ไม่อนุมัติ"}คำขอแล้ว`,
       });
 
-      fetchData();
+      fetchData(user.id);
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -267,329 +175,305 @@ export default function Teacher() {
     }
   };
 
-  const handleRemoveStudentFromGroup = async (memberId: string, studentId: string) => {
-    if (!confirm("ต้องการลบนักศึกษาออกจากกลุ่มนี้หรือไม่?")) return;
-
+  const viewFile = async (fileUrl: string) => {
     try {
-      const { error } = await supabase
-        .from("group_members")
-        .delete()
-        .eq("id", memberId);
+      const { data, error } = await supabase.storage
+        .from("coaching-forms")
+        .createSignedUrl(fileUrl, 60);
 
       if (error) throw error;
-
-      // Clear student's group_id in profiles
-      await supabase
-        .from("profiles")
-        .update({ group_id: null })
-        .eq("id", studentId);
-
-      toast({
-        title: "ลบนักศึกษาสำเร็จ",
-      });
-
-      fetchData();
+      if (data?.signedUrl) {
+        window.open(data.signedUrl, "_blank");
+      }
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "เกิดข้อผิดพลาด",
+        title: "ไม่สามารถเปิดไฟล์ได้",
         description: error.message,
       });
     }
   };
 
-  const totalSessions = students.reduce((sum, s) => sum + s.sessions.length, 0);
-  const totalPending = students.reduce((sum, s) => sum + s.pendingCount, 0);
-
-  const handleExportStudents = (format: 'pdf' | 'excel' | 'csv') => {
-    const exportData = students.map((student: any) => ({
-      'รหัสนักศึกษา': student.studentInfo.student_id || '-',
-      'ชื่อ-นามสกุล': `${student.studentInfo.first_name} ${student.studentInfo.last_name}`,
-      'จำนวนครั้ง': student.sessions.length,
-      'อนุมัติแล้ว': student.completedCount,
-      'รอตรวจสอบ': student.pendingCount
-    }));
-
-    if (format === 'pdf') {
-      exportToPDF(
-        exportData,
-        'รายชื่อนักศึกษา',
-        ['รหัสนักศึกษา', 'ชื่อ-นามสกุล', 'จำนวนครั้ง', 'อนุมัติแล้ว', 'รอตรวจสอบ'],
-        ['รหัสนักศึกษา', 'ชื่อ-นามสกุล', 'จำนวนครั้ง', 'อนุมัติแล้ว', 'รอตรวจสอบ']
-      );
-    } else if (format === 'excel') {
-      exportToExcel(exportData, 'รายชื่อนักศึกษา', 'นักศึกษา');
-    } else {
-      exportToCSV(exportData, 'รายชื่อนักศึกษา');
-    }
-
-    toast({
-      title: "ส่งออกสำเร็จ",
-      description: `ดาวน์โหลดรายงานแล้ว (${format.toUpperCase()})`,
-    });
-  };
-
-  if (isLoading) {
-    return <div className="flex items-center justify-center min-h-screen">กำลังโหลด...</div>;
+  if (loading) {
+    return <div>Loading...</div>;
   }
 
   return (
-    <DashboardLayout role="teacher" userName={`${profile?.first_name || ""} ${profile?.last_name || ""}`}>
-      <Tabs defaultValue="students" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="students">นักศึกษา</TabsTrigger>
-          <TabsTrigger value="groups">กลุ่มเรียน</TabsTrigger>
-          <TabsTrigger value="appointments">นัดหมาย</TabsTrigger>
-        </TabsList>
+    <DashboardLayout role="teacher" userName={`${profile?.first_name} ${profile?.last_name}`}>
+      <div className="space-y-6">
+        <Tabs defaultValue="coaching" className="w-full">
+          <TabsList className="grid w-full grid-cols-6">
+            <TabsTrigger value="coaching">
+              <FileText className="h-4 w-4 mr-2" />
+              Coaching
+            </TabsTrigger>
+            <TabsTrigger value="calendar">
+              <Calendar className="h-4 w-4 mr-2" />
+              ปฏิทิน
+            </TabsTrigger>
+            <TabsTrigger value="appointments">
+              <MessageSquare className="h-4 w-4 mr-2" />
+              นัดหมาย
+            </TabsTrigger>
+            <TabsTrigger value="leave">
+              <ClipboardCheck className="h-4 w-4 mr-2" />
+              คำขอลา
+            </TabsTrigger>
+            <TabsTrigger value="rooms">
+              <Users className="h-4 w-4 mr-2" />
+              จองห้อง
+            </TabsTrigger>
+            <TabsTrigger value="events">
+              <Users className="h-4 w-4 mr-2" />
+              จัดงาน
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="students" className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">จำนวนนักศึกษา</CardTitle>
-              <Users className="w-4 h-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{students.length}</div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">ใบ Coaching ทั้งหมด</CardTitle>
-              <FileCheck className="w-4 h-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{totalSessions}</div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">รอตรวจสอบ</CardTitle>
-              <Eye className="w-4 h-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-warning">{totalPending}</div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>รายชื่อนักศึกษา</CardTitle>
-                <CardDescription>ตรวจสอบและอนุมัติใบ coaching</CardDescription>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => handleExportStudents('pdf')}>
-                  <Download className="w-4 h-4 mr-2" />
-                  PDF
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => handleExportStudents('excel')}>
-                  <Download className="w-4 h-4 mr-2" />
-                  Excel
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => handleExportStudents('csv')}>
-                  <Download className="w-4 h-4 mr-2" />
-                  CSV
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>รหัสนักศึกษา</TableHead>
-                  <TableHead>ชื่อ-นามสกุล</TableHead>
-                  <TableHead className="text-center">จำนวนครั้ง</TableHead>
-                  <TableHead className="text-center">อนุมัติแล้ว</TableHead>
-                  <TableHead className="text-center">รอตรวจสอบ</TableHead>
-                  <TableHead className="text-right">ดำเนินการ</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {students.map((student: any) => (
-                  <TableRow key={student.studentInfo.student_id}>
-                    <TableCell className="font-semibold text-lg">{student.studentInfo.student_id || "-"}</TableCell>
-                    <TableCell className="font-semibold text-lg">{`${student.studentInfo.first_name} ${student.studentInfo.last_name}`}</TableCell>
-                    <TableCell className="text-center">{student.sessions.length}</TableCell>
-                    <TableCell className="text-center">
-                      <Badge className="bg-success text-success-foreground">{student.completedCount}</Badge>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant="secondary">{student.pendingCount}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {student.sessions.map((session: any) => (
-                        <Button
-                          key={session.id}
-                          variant="outline"
-                          size="sm"
-                          className="ml-2"
-                          onClick={() => {
-                            setSelectedSession(session);
-                            setReviewNotes(session.notes || "");
-                          }}
-                        >
-                          ครั้งที่ {session.session_number}
-                        </Button>
-                      ))}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-        </TabsContent>
-
-        <TabsContent value="groups" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>กลุ่มเรียนที่รับผิดชอบ</CardTitle>
-              <CardDescription>จัดการนักศึกษาในกลุ่มของคุณ</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>ชื่อกลุ่ม</TableHead>
-                    <TableHead>สาขา</TableHead>
-                    <TableHead>ชั้นปี</TableHead>
-                    <TableHead>จำนวนนักศึกษา</TableHead>
-                    <TableHead className="text-right">ดำเนินการ</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {assignedGroups.map((assignment: any) => (
-                    <React.Fragment key={assignment.id}>
-                      <TableRow>
-                        <TableCell className="font-medium">{assignment.student_groups?.name}</TableCell>
-                        <TableCell>{assignment.student_groups?.major}</TableCell>
-                        <TableCell>{assignment.student_groups?.year_level}</TableCell>
-                        <TableCell>
-                          {groupMembers.filter(m => m.group_id === assignment.group_id).length} คน
-                        </TableCell>
-                        <TableCell className="text-right">
+          <TabsContent value="coaching" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>รอตรวจสอบใบ Coaching</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {sessions.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-8">
+                      ไม่มีใบ coaching ที่รอตรวจสอบ
+                    </p>
+                  ) : (
+                    sessions.map((session) => (
+                      <div key={session.id} className="border rounded-lg p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-semibold">
+                              {session.student?.first_name} {session.student?.last_name}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              {session.student?.student_id} - ครั้งที่ {session.session_number}
+                            </p>
+                          </div>
+                          <Badge variant="secondary">รอตรวจสอบ</Badge>
+                        </div>
+                        <div className="flex gap-2">
                           <Button
-                            variant="outline"
                             size="sm"
-                            onClick={() => setSelectedGroup(selectedGroup === assignment.group_id ? null : assignment.group_id)}
+                            variant="outline"
+                            onClick={() => viewFile(session.file_url)}
                           >
-                            {selectedGroup === assignment.group_id ? "ซ่อน" : "จัดการ"}
+                            ดูไฟล์
                           </Button>
-                        </TableCell>
-                      </TableRow>
-                      {selectedGroup === assignment.group_id && (
-                        <TableRow>
-                          <TableCell colSpan={5}>
-                            <div className="p-4 space-y-4 bg-muted/50 rounded-lg">
-                              <div className="space-y-2">
-                                <h4 className="font-semibold">นักศึกษาในกลุ่ม</h4>
-                                <div className="flex gap-2 flex-wrap">
-                                  {groupMembers
-                                    .filter(m => m.group_id === assignment.group_id)
-                                    .map(member => (
-                                      <Badge key={member.id} variant="outline" className="gap-2">
-                                        {member.profiles?.first_name} {member.profiles?.last_name}
-                                        ({member.profiles?.student_id})
-                                        <button
-                                          onClick={() => handleRemoveStudentFromGroup(member.id, member.student_id)}
-                                          className="ml-1 hover:text-destructive"
-                                        >
-                                          ✕
-                                        </button>
-                                      </Badge>
-                                    ))}
-                                </div>
-                                <Select onValueChange={(studentId) => handleAddStudentToGroup(assignment.group_id, studentId)}>
-                                  <SelectTrigger className="w-[300px]">
-                                    <SelectValue placeholder="เพิ่มนักศึกษา" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {allStudents
-                                      .filter(s => !groupMembers.some(m => m.student_id === s.id && m.group_id === assignment.group_id))
-                                      .map(s => (
-                                        <SelectItem key={s.id} value={s.id}>
-                                          {s.first_name} {s.last_name} ({s.student_id})
-                                        </SelectItem>
-                                      ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </React.Fragment>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
+                          <Button
+                            size="sm"
+                            onClick={() => handleApproveSession(session.id, "approved")}
+                          >
+                            อนุมัติ
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleApproveSession(session.id, "rejected")}
+                          >
+                            ไม่อนุมัติ
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-        <TabsContent value="appointments" className="space-y-6">
-          <AppointmentCalendar role="teacher" userId={user?.id || ""} />
-          <AppointmentManager role="teacher" userId={user?.id || ""} />
-        </TabsContent>
-      </Tabs>
+          <TabsContent value="calendar">
+            <AppointmentCalendar role="teacher" userId={user?.id || ""} />
+          </TabsContent>
 
-      <Dialog open={!!selectedSession} onOpenChange={() => setSelectedSession(null)}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>ตรวจสอบใบ Coaching ครั้งที่ {selectedSession?.session_number}</DialogTitle>
-          </DialogHeader>
-          {selectedSession && (
-            <div className="space-y-4">
-              <div className="aspect-video bg-muted rounded-lg overflow-hidden">
-                {signedUrl ? (
-                  <iframe
-                    src={signedUrl}
-                    className="w-full h-full"
-                    title="Coaching Form"
-                  />
-                ) : (
-                  <div className="flex items-center justify-center h-full">
-                    <p className="text-muted-foreground">กำลังโหลดไฟล์...</p>
-                  </div>
-                )}
-              </div>
+          <TabsContent value="appointments">
+            <AppointmentManager role="teacher" userId={user?.id || ""} />
+          </TabsContent>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium">หมายเหตุ</label>
-                <Textarea
-                  value={reviewNotes}
-                  onChange={(e) => setReviewNotes(e.target.value)}
-                  placeholder="เพิ่มหมายเหตุ (ถ้ามี)"
-                  rows={3}
-                />
-              </div>
+          <TabsContent value="leave" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>คำขอลา</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {leaveRequests.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-8">ไม่มีคำขอลา</p>
+                  ) : (
+                    leaveRequests.map((request) => (
+                      <div key={request.id} className="border rounded-lg p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-semibold">
+                              {request.student?.first_name} {request.student?.last_name}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              {request.leave_type === "sick" ? "ลาป่วย" : request.leave_type === "personal" ? "ลากิจ" : "อื่นๆ"}
+                            </p>
+                          </div>
+                          <Badge variant="secondary">รอตรวจสอบ</Badge>
+                        </div>
+                        <div>
+                          <p className="text-sm">
+                            <strong>วันที่:</strong> {new Date(request.start_date).toLocaleDateString("th-TH")} -{" "}
+                            {new Date(request.end_date).toLocaleDateString("th-TH")}
+                          </p>
+                          <p className="text-sm mt-1">
+                            <strong>เหตุผล:</strong> {request.reason}
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => handleReviewRequest("leave_requests", request.id, "approved")}
+                          >
+                            อนุมัติ
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleReviewRequest("leave_requests", request.id, "rejected")}
+                          >
+                            ไม่อนุมัติ
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-              <div className="flex gap-3">
-                <Button
-                  className="flex-1 bg-success hover:bg-success/90"
-                  onClick={() => handleReview(selectedSession.id, "approved")}
-                >
-                  <CheckCircle className="w-4 h-4 mr-2" />
-                  อนุมัติ
-                </Button>
-                <Button
-                  variant="destructive"
-                  className="flex-1"
-                  onClick={() => handleReview(selectedSession.id, "rejected")}
-                >
-                  <XCircle className="w-4 h-4 mr-2" />
-                  ไม่อนุมัติ
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+          <TabsContent value="rooms" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>คำขอจองห้อง</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {roomBookings.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-8">ไม่มีคำขอจองห้อง</p>
+                  ) : (
+                    roomBookings.map((booking) => (
+                      <div key={booking.id} className="border rounded-lg p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-semibold">
+                              {booking.student?.first_name} {booking.student?.last_name}
+                            </p>
+                            <p className="text-sm text-muted-foreground">{booking.room_name}</p>
+                          </div>
+                          <Badge variant="secondary">รอตรวจสอบ</Badge>
+                        </div>
+                        <div>
+                          <p className="text-sm">
+                            <strong>วันที่:</strong> {new Date(booking.booking_date).toLocaleDateString("th-TH")}
+                          </p>
+                          <p className="text-sm">
+                            <strong>เวลา:</strong> {booking.start_time} - {booking.end_time}
+                          </p>
+                          <p className="text-sm mt-1">
+                            <strong>วัตถุประสงค์:</strong> {booking.purpose}
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => handleReviewRequest("room_bookings", booking.id, "approved")}
+                          >
+                            อนุมัติ
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleReviewRequest("room_bookings", booking.id, "rejected")}
+                          >
+                            ไม่อนุมัติ
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="events" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>คำขอจัดกิจกรรม</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {eventRequests.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-8">ไม่มีคำขอจัดกิจกรรม</p>
+                  ) : (
+                    eventRequests.map((event) => (
+                      <div key={event.id} className="border rounded-lg p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-semibold">{event.event_name}</p>
+                            <p className="text-sm text-muted-foreground">
+                              โดย {event.student?.first_name} {event.student?.last_name}
+                            </p>
+                          </div>
+                          <Badge variant="secondary">รอตรวจสอบ</Badge>
+                        </div>
+                        <div>
+                          <p className="text-sm">
+                            <strong>ประเภท:</strong> {event.event_type}
+                          </p>
+                          <p className="text-sm">
+                            <strong>วันที่:</strong> {new Date(event.event_date).toLocaleDateString("th-TH")}
+                          </p>
+                          <p className="text-sm">
+                            <strong>เวลา:</strong> {event.start_time} - {event.end_time}
+                          </p>
+                          <p className="text-sm">
+                            <strong>สถานที่:</strong> {event.location || "-"}
+                          </p>
+                          <p className="text-sm">
+                            <strong>ผู้เข้าร่วม:</strong> {event.expected_participants || "-"} คน
+                          </p>
+                          <p className="text-sm mt-1">
+                            <strong>รายละเอียด:</strong> {event.description}
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => handleReviewRequest("event_requests", event.id, "approved")}
+                          >
+                            อนุมัติ
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleReviewRequest("event_requests", event.id, "rejected")}
+                          >
+                            ไม่อนุมัติ
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+
+        <LINENotificationSender userId={user?.id || ""} role="teacher" />
+      </div>
+
+      <AIAssistant />
+      <Footer />
     </DashboardLayout>
   );
-}
+};
+
+export default Teacher;

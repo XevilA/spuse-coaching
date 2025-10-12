@@ -137,7 +137,7 @@ serve(async (req) => {
     console.log("LINE notification sent successfully:", responseData);
 
     // Log notification to database (optional)
-    await supabaseClient
+    const { error: logError } = await supabaseClient
       .from("notification_logs")
       .insert({
         channel_id: typedSettings.id,
@@ -145,10 +145,11 @@ serve(async (req) => {
         notification_type: typedSettings.notification_type,
         status: "sent",
         sent_at: new Date().toISOString(),
-      })
-      .catch((err) => {
-        console.warn("Failed to log notification:", err);
       });
+
+    if (logError) {
+      console.warn("Failed to log notification:", logError);
+    }
 
     return new Response(
       JSON.stringify({

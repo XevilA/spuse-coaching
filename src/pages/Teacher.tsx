@@ -7,6 +7,7 @@ import { AppointmentCalendar } from "@/components/AppointmentCalendar";
 import { AppointmentManager } from "@/components/AppointmentManager";
 import { AIAssistant } from "@/components/AIAssistant";
 import { Footer } from "@/components/Footer";
+import { LINENotificationSender } from "@/components/LINENotificationSender";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -17,11 +18,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   FileText,
-  Calendar,
+  Calendar as CalendarIcon,
   MessageSquare,
-  Users,
+  Users as UsersIcon,
   ClipboardCheck,
   Send,
   MessageCircle,
@@ -31,6 +33,7 @@ import {
   Loader2,
   AlertCircle,
   Eye,
+  BookOpen,
 } from "lucide-react";
 
 const Teacher = () => {
@@ -43,6 +46,9 @@ const Teacher = () => {
   const [eventRequests, setEventRequests] = useState<any[]>([]);
   const [lineChannels, setLineChannels] = useState<any[]>([]);
   const [sending, setSending] = useState(false);
+  const [commentDialogOpen, setCommentDialogOpen] = useState(false);
+  const [currentSession, setCurrentSession] = useState<any>(null);
+  const [sessionComment, setSessionComment] = useState("");
   const [lineMessage, setLineMessage] = useState({
     channelId: "",
     message: "",
@@ -111,13 +117,13 @@ const Teacher = () => {
 
   const fetchData = async (teacherId: string) => {
     try {
-      const [sessionsRes, leaveRes, roomRes, eventRes, lineRes] = await Promise.all([
+      const [sessionsRes, leaveRes, roomRes, eventRes, lineRes, assignmentsRes, allSessionsRes] = await Promise.all([
         supabase
           .from("coaching_sessions")
           .select(
             `
             *,
-            student:profiles!coaching_sessions_student_id_fkey(first_name, last_name, student_id)
+            student:profiles!coaching_sessions_student_id_fkey(first_name, last_name, student_id, group_id)
           `,
           )
           .eq("status", "pending")
@@ -157,6 +163,24 @@ const Teacher = () => {
           .order("created_at", { ascending: false }),
 
         supabase.from("line_notifications").select("*").eq("enabled", true),
+        
+        // Fetch teacher's group assignments
+        supabase
+          .from("teacher_assignments")
+          .select(`
+            *,
+            student_groups(name, required_sessions)
+          `)
+          .eq("teacher_id", teacherId),
+          
+        // Fetch all coaching sessions for teacher's groups
+        supabase
+          .from("coaching_sessions")
+          .select(`
+            *,
+            student:profiles!coaching_sessions_student_id_fkey(first_name, last_name, student_id, group_id)
+          `)
+          .order("created_at", { ascending: false }),
       ]);
 
       setSessions(sessionsRes.data || []);
@@ -164,6 +188,23 @@ const Teacher = () => {
       setRoomBookings(roomRes.data || []);
       setEventRequests(eventRes.data || []);
       setLineChannels(lineRes.data || []);
+      
+      // Set teacher assignments and calculate stats
+      if (assignmentsRes.data) {
+        const groupIds = assignmentsRes.data.map(a => a.group_id);
+        const teacherSessions = (allSessionsRes.data || []).filter((s: any) => 
+          groupIds.includes(s.student?.group_id)
+        );
+        
+        setProfile((prev: any) => ({
+          ...prev,
+          teacherAssignments: assignmentsRes.data,
+          totalGroups: assignmentsRes.data.length,
+          totalSessions: teacherSessions.length,
+          approvedSessions: teacherSessions.filter((s: any) => s.status === "approved").length,
+          pendingSessions: teacherSessions.filter((s: any) => s.status === "pending").length,
+        }));
+      }
     } catch (error: any) {
       console.error("Error fetching data:", error);
       toast({
@@ -174,15 +215,21 @@ const Teacher = () => {
     }
   };
 
-  const handleApproveSession = async (sessionId: string, action: "approved" | "rejected") => {
+  const handleApproveSession = async (sessionId: string, action: "approved" | "rejected", comment?: string) => {
     try {
+      const updateData: any = {
+        status: action,
+        reviewed_by: user.id,
+        reviewed_at: new Date().toISOString(),
+      };
+      
+      if (comment) {
+        updateData.teacher_comment = comment;
+      }
+      
       const { error } = await supabase
         .from("coaching_sessions")
-        .update({
-          status: action,
-          reviewed_by: user.id,
-          reviewed_at: new Date().toISOString(),
-        })
+        .update(updateData)
         .eq("id", sessionId);
 
       if (error) throw error;
@@ -235,59 +282,7 @@ const Teacher = () => {
   };
 
   const handleSendLineMessage = async () => {
-    if (!lineMessage.channelId || !lineMessage.message) {
-      toast({
-        variant: "destructive",
-        title: "กรุณากรอกข้อมูลให้ครบถ้วน",
-      });
-      return;
-    }
-
-    setSending(true);
-    try {
-      // Find selected channel
-      const selectedChannel = lineChannels.find((c) => c.id === lineMessage.channelId);
-      if (!selectedChannel) {
-        throw new Error("ไม่พบ LINE Channel ที่เลือก");
-      }
-
-      // Send LINE notification using LINE Messaging API
-      const response = await fetch("https://api.line.me/v2/bot/message/broadcast", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${selectedChannel.channel_access_token}`,
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              type: "text",
-              text: lineMessage.message,
-            },
-          ],
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("ไม่สามารถส่งข้อความได้");
-      }
-
-      toast({
-        title: "ส่งข้อความสำเร็จ",
-        description: "ส่งข้อความผ่าน LINE แล้ว",
-      });
-
-      // Reset form
-      setLineMessage({ channelId: "", message: "" });
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "เกิดข้อผิดพลาด",
-        description: error.message,
-      });
-    } finally {
-      setSending(false);
-    }
+    // This function is replaced by LINENotificationSender component
   };
 
   const viewFile = async (fileUrl: string) => {
@@ -332,44 +327,58 @@ const Teacher = () => {
     <DashboardLayout role="teacher" userName={`${profile?.first_name || ""} ${profile?.last_name || ""}`}>
       <div className="space-y-6 animate-in fade-in duration-500">
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <Card className="hover:shadow-lg transition-shadow duration-300 border-l-4 border-l-blue-500">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">กลุ่มที่ดูแล</CardTitle>
+              <UsersIcon className="w-5 h-5 text-blue-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">{profile?.totalGroups || 0}</div>
+              <p className="text-xs text-muted-foreground mt-1">กลุ่มเรียน</p>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-lg transition-shadow duration-300 border-l-4 border-l-green-500">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Coaching ทั้งหมด</CardTitle>
+              <BookOpen className="w-5 h-5 text-green-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">{profile?.totalSessions || 0}</div>
+              <p className="text-xs text-muted-foreground mt-1">อนุมัติแล้ว {profile?.approvedSessions || 0}</p>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-lg transition-shadow duration-300 border-l-4 border-l-orange-500">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Coaching รอตรวจ</CardTitle>
-              <FileText className="w-5 h-5 text-blue-500" />
+              <FileText className="w-5 h-5 text-orange-500" />
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">{sessions.length}</div>
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-lg transition-shadow duration-300 border-l-4 border-l-green-500">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">คำขอลา</CardTitle>
-              <ClipboardCheck className="w-5 h-5 text-green-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{leaveRequests.length}</div>
-            </CardContent>
-          </Card>
-
           <Card className="hover:shadow-lg transition-shadow duration-300 border-l-4 border-l-purple-500">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">จองห้อง</CardTitle>
-              <Users className="w-5 h-5 text-purple-500" />
+              <CardTitle className="text-sm font-medium text-muted-foreground">คำขอต่างๆ</CardTitle>
+              <ClipboardCheck className="w-5 h-5 text-purple-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">{roomBookings.length}</div>
+              <div className="text-3xl font-bold">{leaveRequests.length + roomBookings.length + eventRequests.length}</div>
+              <p className="text-xs text-muted-foreground mt-1">ลา+ห้อง+กิจกรรม</p>
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-lg transition-shadow duration-300 border-l-4 border-l-orange-500">
+          <Card className="hover:shadow-lg transition-shadow duration-300 border-l-4 border-l-red-500">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">จัดกิจกรรม</CardTitle>
-              <Calendar className="w-5 h-5 text-orange-500" />
+              <CardTitle className="text-sm font-medium text-muted-foreground">รอพิจารณา</CardTitle>
+              <Clock className="w-5 h-5 text-red-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">{eventRequests.length}</div>
+              <div className="text-3xl font-bold">{profile?.pendingSessions || 0}</div>
+              <p className="text-xs text-muted-foreground mt-1">Coaching รอ</p>
             </CardContent>
           </Card>
         </div>
@@ -387,7 +396,7 @@ const Teacher = () => {
               value="calendar"
               className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
             >
-              <Calendar className="h-4 w-4 mr-2" />
+              <CalendarIcon className="h-4 w-4 mr-2" />
               ปฏิทิน
             </TabsTrigger>
             <TabsTrigger
@@ -408,14 +417,14 @@ const Teacher = () => {
               value="rooms"
               className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
             >
-              <Users className="h-4 w-4 mr-2" />
+              <UsersIcon className="h-4 w-4 mr-2" />
               จองห้อง
             </TabsTrigger>
             <TabsTrigger
               value="events"
               className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
             >
-              <Users className="h-4 w-4 mr-2" />
+              <CalendarIcon className="h-4 w-4 mr-2" />
               จัดงาน
             </TabsTrigger>
             <TabsTrigger
@@ -466,7 +475,7 @@ const Teacher = () => {
                             รอตรวจสอบ
                           </Badge>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                           <Button size="sm" variant="outline" onClick={() => viewFile(session.file_url)}>
                             <Eye className="w-4 h-4 mr-2" />
                             ดูไฟล์
@@ -474,7 +483,10 @@ const Teacher = () => {
                           <Button
                             size="sm"
                             className="bg-green-600 hover:bg-green-700"
-                            onClick={() => handleApproveSession(session.id, "approved")}
+                            onClick={() => {
+                              setCurrentSession({ ...session, status: "approved" });
+                              setCommentDialogOpen(true);
+                            }}
                           >
                             <CheckCircle className="w-4 h-4 mr-2" />
                             อนุมัติ
@@ -482,7 +494,10 @@ const Teacher = () => {
                           <Button
                             size="sm"
                             variant="destructive"
-                            onClick={() => handleApproveSession(session.id, "rejected")}
+                            onClick={() => {
+                              setCurrentSession({ ...session, status: "rejected" });
+                              setCommentDialogOpen(true);
+                            }}
                           >
                             <XCircle className="w-4 h-4 mr-2" />
                             ไม่อนุมัติ
@@ -583,7 +598,7 @@ const Teacher = () => {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Users className="w-5 h-5" />
+                  <UsersIcon className="w-5 h-5" />
                   คำขอจองห้อง
                 </CardTitle>
                 <CardDescription>มีคำขอจองห้องรอตรวจสอบ {roomBookings.length} รายการ</CardDescription>
@@ -654,7 +669,7 @@ const Teacher = () => {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Calendar className="w-5 h-5" />
+                  <CalendarIcon className="w-5 h-5" />
                   คำขอจัดกิจกรรม
                 </CardTitle>
                 <CardDescription>มีคำขอจัดกิจกรรมรอตรวจสอบ {eventRequests.length} รายการ</CardDescription>
@@ -728,125 +743,67 @@ const Teacher = () => {
           </TabsContent>
 
           <TabsContent value="line" className="space-y-4 animate-in fade-in duration-300">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Send Message Card */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Send className="w-5 h-5" />
-                    ส่งข้อความผ่าน LINE
-                  </CardTitle>
-                  <CardDescription>ส่งข้อความไปยัง LINE Channel ที่เปิดใช้งาน</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {lineChannels.length === 0 ? (
-                    <Alert>
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription>
-                        ยังไม่มี LINE Channel ที่เปิดใช้งาน กรุณาติดต่อ Super Admin เพื่อเพิ่ม Channel
-                      </AlertDescription>
-                    </Alert>
-                  ) : (
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="channel">เลือก LINE Channel</Label>
-                        <Select
-                          value={lineMessage.channelId}
-                          onValueChange={(value) => setLineMessage({ ...lineMessage, channelId: value })}
-                        >
-                          <SelectTrigger id="channel">
-                            <SelectValue placeholder="เลือก Channel" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {lineChannels.map((channel) => (
-                              <SelectItem key={channel.id} value={channel.id}>
-                                {channel.name}
-                                {channel.description && ` - ${channel.description}`}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="message">ข้อความ</Label>
-                        <Textarea
-                          id="message"
-                          placeholder="พิมพ์ข้อความที่ต้องการส่ง..."
-                          value={lineMessage.message}
-                          onChange={(e) => setLineMessage({ ...lineMessage, message: e.target.value })}
-                          rows={6}
-                        />
-                        <p className="text-xs text-muted-foreground">ความยาว: {lineMessage.message.length} ตัวอักษร</p>
-                      </div>
-
-                      <Button
-                        onClick={handleSendLineMessage}
-                        disabled={sending || !lineMessage.channelId || !lineMessage.message}
-                        className="w-full"
-                      >
-                        {sending ? (
-                          <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            กำลังส่ง...
-                          </>
-                        ) : (
-                          <>
-                            <Send className="w-4 h-4 mr-2" />
-                            ส่งข้อความ
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* LINE Channels List */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <MessageCircle className="w-5 h-5" />
-                    LINE Channels ที่เปิดใช้งาน
-                  </CardTitle>
-                  <CardDescription>รายการ LINE Channels ทั้งหมด ({lineChannels.length})</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {lineChannels.length === 0 ? (
-                    <Alert>
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription>ยังไม่มี LINE Channel ที่เปิดใช้งาน</AlertDescription>
-                    </Alert>
-                  ) : (
-                    <div className="space-y-3">
-                      {lineChannels.map((channel) => (
-                        <div key={channel.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
-                          <div className="flex items-start justify-between">
-                            <div className="space-y-1">
-                              <p className="font-semibold">{channel.name}</p>
-                              {channel.description && (
-                                <p className="text-sm text-muted-foreground">{channel.description}</p>
-                              )}
-                              <div className="flex gap-2 mt-2">
-                                <Badge variant="outline" className="text-xs">
-                                  {channel.notification_type === "group" ? "Group Message" : "Broadcast Message"}
-                                </Badge>
-                                <Badge className="bg-green-100 text-green-700 text-xs">
-                                  <CheckCircle className="w-3 h-3 mr-1" />
-                                  เปิดใช้งาน
-                                </Badge>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
+            <LINENotificationSender userId={user?.id || ""} role="teacher" />
           </TabsContent>
         </Tabs>
+        
+        {/* Comment Dialog */}
+        <Dialog open={commentDialogOpen} onOpenChange={setCommentDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {currentSession?.status === "approved" ? "อนุมัติใบ Coaching" : "ไม่อนุมัติใบ Coaching"}
+              </DialogTitle>
+              <DialogDescription>
+                {currentSession?.student && (
+                  <span>
+                    นักศึกษา: {currentSession.student.first_name} {currentSession.student.last_name} (
+                    {currentSession.student.student_id}) - ครั้งที่ {currentSession.session_number}
+                  </span>
+                )}
+                <br />
+                เพิ่มความคิดเห็นสำหรับนักศึกษา (ไม่บังคับ)
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="comment">ความคิดเห็นของอาจารย์</Label>
+                <Textarea
+                  id="comment"
+                  placeholder="พิมพ์ความคิดเห็นหรือข้อเสนอแนะ..."
+                  value={sessionComment}
+                  onChange={(e) => setSessionComment(e.target.value)}
+                  rows={5}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCommentDialogOpen(false);
+                  setSessionComment("");
+                  setCurrentSession(null);
+                }}
+              >
+                ยกเลิก
+              </Button>
+              <Button
+                onClick={() => {
+                  const action = currentSession?.status === "approved" ? "approved" : "rejected";
+                  handleApproveSession(currentSession?.id, action, sessionComment);
+                  setCommentDialogOpen(false);
+                  setSessionComment("");
+                  setCurrentSession(null);
+                }}
+                className={currentSession?.status === "approved" ? "bg-green-600 hover:bg-green-700" : ""}
+                variant={currentSession?.status === "rejected" ? "destructive" : "default"}
+              >
+                ยืนยัน{currentSession?.status === "approved" ? "อนุมัติ" : "ไม่อนุมัติ"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <AIAssistant />

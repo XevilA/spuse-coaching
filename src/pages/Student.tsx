@@ -507,6 +507,12 @@ export default function Student() {
                               <div className="p-3 bg-white rounded-lg border border-gray-100">
                                 <p className="text-sm text-gray-600 truncate font-medium">{session.file_name}</p>
                               </div>
+                              {session.teacher_comment && (
+                                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                                  <p className="text-xs font-semibold text-blue-900 mb-1">ความคิดเห็นจากอาจารย์:</p>
+                                  <p className="text-sm text-blue-800">{session.teacher_comment}</p>
+                                </div>
+                              )}
                               <Button
                                 variant="outline"
                                 size="sm"

@@ -70,6 +70,12 @@ export default function SuperAdmin() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formErrors, setFormErrors] = useState<any>({});
 
+  // NEW: Track assignment operations
+  const [isAssigningTeacher, setIsAssigningTeacher] = useState(false);
+  const [isAddingStudent, setIsAddingStudent] = useState(false);
+  const [selectedTeacher, setSelectedTeacher] = useState("");
+  const [selectedStudent, setSelectedStudent] = useState("");
+
   const [newUser, setNewUser] = useState({
     email: "",
     password: "",
@@ -160,6 +166,7 @@ export default function SuperAdmin() {
       if (assignmentsRes.data) setTeacherAssignments(assignmentsRes.data);
       if (membersRes.data) setGroupMembers(membersRes.data);
     } catch (error: any) {
+      console.error("Error fetching data:", error);
       toast({
         variant: "destructive",
         title: "เกิดข้อผิดพลาด",
@@ -456,20 +463,67 @@ export default function SuperAdmin() {
     }
   };
 
+  // FIXED: Improved teacher assignment with validation
   const handleAssignTeacher = async (groupId: string, teacherId: string) => {
+    if (!teacherId) {
+      toast({
+        variant: "destructive",
+        title: "กรุณาเลือกอาจารย์",
+      });
+      return;
+    }
+
+    // Check if teacher is already assigned to this group
+    const isAlreadyAssigned = teacherAssignments.some(
+      (assignment) => assignment.group_id === groupId && assignment.teacher_id === teacherId,
+    );
+
+    if (isAlreadyAssigned) {
+      toast({
+        variant: "destructive",
+        title: "อาจารย์ถูกมอบหมายแล้ว",
+        description: "อาจารย์ท่านนี้ได้รับมอบหมายให้ดูแลกลุ่มนี้แล้ว",
+      });
+      return;
+    }
+
+    setIsAssigningTeacher(true);
+    console.log("Assigning teacher:", { groupId, teacherId });
+
     try {
-      const { error } = await supabase.from("teacher_assignments").insert({ group_id: groupId, teacher_id: teacherId });
+      const { data, error } = await supabase
+        .from("teacher_assignments")
+        .insert({
+          group_id: groupId,
+          teacher_id: teacherId,
+        })
+        .select();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Teacher assignment error:", error);
+        throw error;
+      }
 
-      toast({ title: "มอบหมายอาจารย์สำเร็จ" });
-      if (user) fetchData(user.id);
+      console.log("Teacher assigned successfully:", data);
+
+      toast({
+        title: "มอบหมายอาจารย์สำเร็จ",
+        description: "เพิ่มอาจารย์ผู้รับผิดชอบกลุ่มแล้ว",
+      });
+
+      // Reset selection
+      setSelectedTeacher("");
+
+      if (user) await fetchData(user.id);
     } catch (error: any) {
+      console.error("Error in handleAssignTeacher:", error);
       toast({
         variant: "destructive",
         title: "เกิดข้อผิดพลาด",
-        description: error.message,
+        description: error.message || "ไม่สามารถมอบหมายอาจารย์ได้",
       });
+    } finally {
+      setIsAssigningTeacher(false);
     }
   };
 
@@ -490,22 +544,86 @@ export default function SuperAdmin() {
     }
   };
 
+  // FIXED: Improved student assignment with validation
   const handleAddStudentToGroup = async (groupId: string, studentId: string) => {
+    if (!studentId) {
+      toast({
+        variant: "destructive",
+        title: "กรุณาเลือกนักศึกษา",
+      });
+      return;
+    }
+
+    // Check if student is already in this group
+    const isInGroup = groupMembers.some((member) => member.student_id === studentId && member.group_id === groupId);
+
+    if (isInGroup) {
+      toast({
+        variant: "destructive",
+        title: "นักศึกษาอยู่ในกลุ่มแล้ว",
+        description: "นักศึกษาท่านนี้อยู่ในกลุ่มนี้แล้ว",
+      });
+      return;
+    }
+
+    // Check if student is in another group
+    const existingMember = groupMembers.find((member) => member.student_id === studentId);
+    if (existingMember) {
+      const otherGroup = groups.find((g) => g.id === existingMember.group_id);
+      toast({
+        variant: "destructive",
+        title: "นักศึกษาอยู่ในกลุ่มอื่นแล้ว",
+        description: `นักศึกษาท่านนี้อยู่ใน ${otherGroup?.name || "กลุ่มอื่น"} แล้ว กรุณาลบออกจากกลุ่มเดิมก่อน`,
+      });
+      return;
+    }
+
+    setIsAddingStudent(true);
+    console.log("Adding student to group:", { groupId, studentId });
+
     try {
-      const { error } = await supabase.from("group_members").insert({ group_id: groupId, student_id: studentId });
+      // Insert into group_members
+      const { data: memberData, error: memberError } = await supabase
+        .from("group_members")
+        .insert({
+          group_id: groupId,
+          student_id: studentId,
+        })
+        .select();
 
-      if (error) throw error;
+      if (memberError) {
+        console.error("Group member insert error:", memberError);
+        throw memberError;
+      }
 
-      await supabase.from("profiles").update({ group_id: groupId }).eq("id", studentId);
+      console.log("Group member inserted:", memberData);
 
-      toast({ title: "เพิ่มนักศึกษาสำเร็จ" });
-      if (user) fetchData(user.id);
+      // Update profile with group_id
+      const { error: profileError } = await supabase.from("profiles").update({ group_id: groupId }).eq("id", studentId);
+
+      if (profileError) {
+        console.error("Profile update error:", profileError);
+        // Don't throw error here as the main operation succeeded
+      }
+
+      toast({
+        title: "เพิ่มนักศึกษาสำเร็จ",
+        description: "เพิ่มนักศึกษาเข้ากลุ่มแล้ว",
+      });
+
+      // Reset selection
+      setSelectedStudent("");
+
+      if (user) await fetchData(user.id);
     } catch (error: any) {
+      console.error("Error in handleAddStudentToGroup:", error);
       toast({
         variant: "destructive",
         title: "เกิดข้อผิดพลาด",
-        description: error.message,
+        description: error.message || "ไม่สามารถเพิ่มนักศึกษาได้",
       });
+    } finally {
+      setIsAddingStudent(false);
     }
   };
 
@@ -1130,7 +1248,7 @@ export default function SuperAdmin() {
                                 <TableRow>
                                   <TableCell colSpan={4}>
                                     <div className="p-6 space-y-6 bg-muted/30 rounded-lg animate-in fade-in duration-200">
-                                      {/* Teachers Section */}
+                                      {/* Teachers Section - FIXED */}
                                       <div className="space-y-3">
                                         <div className="flex items-center gap-2">
                                           <Shield className="w-4 h-4 text-green-600" />
@@ -1158,21 +1276,48 @@ export default function SuperAdmin() {
                                             <p className="text-sm text-muted-foreground">ยังไม่มีอาจารย์ผู้รับผิดชอบ</p>
                                           )}
                                         </div>
-                                        <Select onValueChange={(teacherId) => handleAssignTeacher(group.id, teacherId)}>
-                                          <SelectTrigger className="w-full md:w-[300px]">
-                                            <SelectValue placeholder="เพิ่มอาจารย์" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {teachers.map((t) => (
-                                              <SelectItem key={t.id} value={t.id}>
-                                                {t.first_name} {t.last_name}
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
+                                        <div className="flex gap-2">
+                                          <Select
+                                            value={selectedGroup === group.id ? selectedTeacher : ""}
+                                            onValueChange={setSelectedTeacher}
+                                          >
+                                            <SelectTrigger className="w-full md:w-[300px]">
+                                              <SelectValue placeholder="เลือกอาจารย์" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {teachers
+                                                .filter(
+                                                  (t) =>
+                                                    !teacherAssignments.some(
+                                                      (a) => a.teacher_id === t.id && a.group_id === group.id,
+                                                    ),
+                                                )
+                                                .map((t) => (
+                                                  <SelectItem key={t.id} value={t.id}>
+                                                    {t.first_name} {t.last_name} {t.employee_id && `(${t.employee_id})`}
+                                                  </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                          </Select>
+                                          <Button
+                                            onClick={() => {
+                                              if (selectedTeacher) {
+                                                handleAssignTeacher(group.id, selectedTeacher);
+                                              }
+                                            }}
+                                            disabled={isAssigningTeacher || !selectedTeacher}
+                                            size="sm"
+                                          >
+                                            {isAssigningTeacher ? (
+                                              <Loader2 className="w-4 h-4 animate-spin" />
+                                            ) : (
+                                              "เพิ่ม"
+                                            )}
+                                          </Button>
+                                        </div>
                                       </div>
 
-                                      {/* Students Section */}
+                                      {/* Students Section - FIXED */}
                                       <div className="space-y-3">
                                         <div className="flex items-center gap-2">
                                           <Users className="w-4 h-4 text-blue-600" />
@@ -1183,8 +1328,8 @@ export default function SuperAdmin() {
                                             .filter((m) => m.group_id === group.id)
                                             .map((member) => (
                                               <Badge key={member.id} variant="outline" className="gap-2 py-1.5 px-3">
-                                                {member.profiles?.first_name} {member.profiles?.last_name}(
-                                                {member.profiles?.student_id})
+                                                {member.profiles?.first_name} {member.profiles?.last_name}
+                                                {member.profiles?.student_id && ` (${member.profiles.student_id})`}
                                                 <button
                                                   onClick={() =>
                                                     handleRemoveStudentFromGroup(member.id, member.student_id)
@@ -1199,27 +1344,40 @@ export default function SuperAdmin() {
                                             <p className="text-sm text-muted-foreground">ยังไม่มีนักศึกษาในกลุ่ม</p>
                                           )}
                                         </div>
-                                        <Select
-                                          onValueChange={(studentId) => handleAddStudentToGroup(group.id, studentId)}
-                                        >
-                                          <SelectTrigger className="w-full md:w-[300px]">
-                                            <SelectValue placeholder="เพิ่มนักศึกษา" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {students
-                                              .filter(
-                                                (s) =>
-                                                  !groupMembers.some(
-                                                    (m) => m.student_id === s.id && m.group_id === group.id,
-                                                  ),
-                                              )
-                                              .map((s) => (
-                                                <SelectItem key={s.id} value={s.id}>
-                                                  {s.first_name} {s.last_name} ({s.student_id})
-                                                </SelectItem>
-                                              ))}
-                                          </SelectContent>
-                                        </Select>
+                                        <div className="flex gap-2">
+                                          <Select
+                                            value={selectedGroup === group.id ? selectedStudent : ""}
+                                            onValueChange={setSelectedStudent}
+                                          >
+                                            <SelectTrigger className="w-full md:w-[300px]">
+                                              <SelectValue placeholder="เลือกนักศึกษา" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {students
+                                                .filter(
+                                                  (s) =>
+                                                    // Exclude students already in ANY group
+                                                    !groupMembers.some((m) => m.student_id === s.id),
+                                                )
+                                                .map((s) => (
+                                                  <SelectItem key={s.id} value={s.id}>
+                                                    {s.first_name} {s.last_name} {s.student_id && `(${s.student_id})`}
+                                                  </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                          </Select>
+                                          <Button
+                                            onClick={() => {
+                                              if (selectedStudent) {
+                                                handleAddStudentToGroup(group.id, selectedStudent);
+                                              }
+                                            }}
+                                            disabled={isAddingStudent || !selectedStudent}
+                                            size="sm"
+                                          >
+                                            {isAddingStudent ? <Loader2 className="w-4 h-4 animate-spin" /> : "เพิ่ม"}
+                                          </Button>
+                                        </div>
                                       </div>
                                     </div>
                                   </TableCell>

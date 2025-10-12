@@ -14,6 +14,7 @@ interface NotificationRequest {
 
 interface LineNotificationSettings {
   id: string;
+  name: string;
   channel_access_token: string;
   notification_type: "group" | "broadcast";
   group_id?: string;
@@ -26,70 +27,132 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  console.log("=== LINE Notification Edge Function Started ===");
+  console.log("Request method:", req.method);
+  console.log("Request headers:", Object.fromEntries(req.headers.entries()));
+
   try {
     // Validate request body
     const body: NotificationRequest = await req.json();
+    console.log("Request body received:", JSON.stringify(body, null, 2));
+
     const { message, channelId, notificationType } = body;
 
+    // Validate message
     if (!message || message.trim().length === 0) {
+      console.error("Validation error: Message is empty");
       throw new Error("Message is required and cannot be empty");
     }
+
+    if (message.length > 5000) {
+      console.error("Validation error: Message too long");
+      throw new Error("Message cannot exceed 5000 characters");
+    }
+
+    console.log("Message validated successfully");
+    console.log("Message length:", message.length);
+    console.log("Channel ID:", channelId || "not provided");
+    console.log("Notification type:", notificationType || "not provided");
 
     // Initialize Supabase client
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!supabaseUrl || !supabaseKey) {
+      console.error("Missing Supabase credentials");
       throw new Error("Supabase credentials not configured");
     }
 
+    console.log("Supabase client initialized");
     const supabaseClient = createClient(supabaseUrl, supabaseKey);
 
-    // Build query for LINE notification settings
-    let query = supabaseClient.from("line_notifications").select("*").eq("enabled", true);
+    // Fetch LINE notification settings
+    let settings: LineNotificationSettings | null = null;
 
     if (channelId) {
-      query = query.eq("id", channelId);
+      console.log("Fetching channel by ID:", channelId);
+      const { data, error } = await supabaseClient
+        .from("line_notifications")
+        .select("*")
+        .eq("id", channelId)
+        .eq("enabled", true)
+        .single();
+
+      if (error) {
+        console.error("Database error fetching channel:", error);
+        throw new Error(`Channel not found or disabled: ${error.message}`);
+      }
+
+      settings = data as LineNotificationSettings;
+      console.log("Channel found:", settings.name);
     } else if (notificationType) {
-      query = query.eq("notification_type", notificationType);
+      console.log("Fetching channel by notification type:", notificationType);
+      const { data, error } = await supabaseClient
+        .from("line_notifications")
+        .select("*")
+        .eq("notification_type", notificationType)
+        .eq("enabled", true)
+        .limit(1)
+        .single();
+
+      if (error) {
+        console.error("Database error fetching by type:", error);
+        throw new Error(`No active ${notificationType} channel found: ${error.message}`);
+      }
+
+      settings = data as LineNotificationSettings;
+      console.log("Channel found:", settings.name);
     } else {
-      // Default to first active notification if no filter specified
-      console.log("No channelId or notificationType specified, using first active notification");
+      console.log("Fetching first active channel");
+      const { data, error } = await supabaseClient
+        .from("line_notifications")
+        .select("*")
+        .eq("enabled", true)
+        .limit(1)
+        .single();
+
+      if (error) {
+        console.error("Database error fetching first active:", error);
+        throw new Error("No active LINE notification channels found");
+      }
+
+      settings = data as LineNotificationSettings;
+      console.log("Channel found:", settings.name);
     }
 
-    // Execute query
-    const { data: settings, error: dbError } = await query.limit(1).maybeSingle();
-
-    if (dbError) {
-      console.error("Database error:", dbError);
-      throw new Error(`Failed to fetch LINE notification settings: ${dbError.message}`);
-    }
-
+    // Validate settings
     if (!settings) {
+      console.error("No settings retrieved from database");
       throw new Error("No active LINE notification configuration found");
     }
 
-    const typedSettings = settings as LineNotificationSettings;
-
-    if (!typedSettings.channel_access_token) {
-      throw new Error("LINE channel access token not configured");
+    if (!settings.channel_access_token || settings.channel_access_token.trim().length === 0) {
+      console.error("Channel access token is missing or empty");
+      throw new Error("LINE channel access token not configured for this channel");
     }
 
-    console.log(`Sending LINE notification via ${typedSettings.notification_type} channel`);
+    console.log("=== Preparing LINE API Request ===");
+    console.log("Channel name:", settings.name);
+    console.log("Notification type:", settings.notification_type);
+    console.log("Access token length:", settings.channel_access_token.length);
 
     // Prepare LINE API request
     let lineApiUrl: string;
     let linePayload: any;
 
-    if (typedSettings.notification_type === "group") {
+    if (settings.notification_type === "group") {
       // Send to specific LINE group
-      if (!typedSettings.group_id) {
-        throw new Error("Group ID not configured for group notification");
+      if (!settings.group_id || settings.group_id.trim().length === 0) {
+        console.error("Group ID is missing for group notification");
+        throw new Error("Group ID not configured for this channel");
       }
+
+      console.log("Using push API for group message");
+      console.log("Target group ID:", settings.group_id);
 
       lineApiUrl = "https://api.line.me/v2/bot/message/push";
       linePayload = {
-        to: typedSettings.group_id,
+        to: settings.group_id,
         messages: [
           {
             type: "text",
@@ -97,8 +160,9 @@ serve(async (req) => {
           },
         ],
       };
-    } else if (typedSettings.notification_type === "broadcast") {
-      // Send broadcast message to all followers
+    } else if (settings.notification_type === "broadcast") {
+      console.log("Using broadcast API");
+
       lineApiUrl = "https://api.line.me/v2/bot/message/broadcast";
       linePayload = {
         messages: [
@@ -109,53 +173,83 @@ serve(async (req) => {
         ],
       };
     } else {
-      throw new Error(`Unsupported notification type: ${typedSettings.notification_type}`);
+      console.error("Invalid notification type:", settings.notification_type);
+      throw new Error(`Unsupported notification type: ${settings.notification_type}`);
     }
 
+    console.log("LINE API URL:", lineApiUrl);
+    console.log("Payload:", JSON.stringify(linePayload, null, 2));
+
     // Send LINE notification
+    console.log("=== Sending to LINE API ===");
     const lineResponse = await fetch(lineApiUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${typedSettings.channel_access_token}`,
+        Authorization: `Bearer ${settings.channel_access_token}`,
       },
       body: JSON.stringify(linePayload),
     });
 
+    console.log("LINE API response status:", lineResponse.status);
+    console.log("LINE API response status text:", lineResponse.statusText);
+
     // Handle LINE API response
     if (!lineResponse.ok) {
       const errorText = await lineResponse.text();
-      console.error("LINE API error:", {
+      console.error("LINE API error response:", {
         status: lineResponse.status,
         statusText: lineResponse.statusText,
         body: errorText,
       });
-      throw new Error(`LINE API error (${lineResponse.status}): ${errorText}`);
+
+      // Parse LINE error if possible
+      let errorMessage = errorText;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.message || errorText;
+        console.error("Parsed LINE error:", errorJson);
+      } catch (e) {
+        console.log("Could not parse error as JSON");
+      }
+
+      throw new Error(`LINE API error (${lineResponse.status}): ${errorMessage}`);
     }
 
     const responseData = await lineResponse.json().catch(() => ({}));
-    console.log("LINE notification sent successfully:", responseData);
+    console.log("LINE notification sent successfully!");
+    console.log("LINE response data:", responseData);
 
-    // Log notification to database (optional)
-    const { error: logError } = await supabaseClient
-      .from("notification_logs")
-      .insert({
-        channel_id: typedSettings.id,
+    // Log notification to database (with error handling)
+    try {
+      console.log("Attempting to log notification to database");
+      const { error: logError } = await supabaseClient.from("notification_logs").insert({
+        channel_id: settings.id,
         message: message,
-        notification_type: typedSettings.notification_type,
+        notification_type: settings.notification_type,
         status: "sent",
         sent_at: new Date().toISOString(),
       });
 
-    if (logError) {
-      console.warn("Failed to log notification:", logError);
+      if (logError) {
+        // Don't throw error, just log warning
+        console.warn("Failed to log notification (non-critical):", logError);
+        console.warn("This might be because notification_logs table doesn't exist");
+      } else {
+        console.log("Notification logged successfully");
+      }
+    } catch (logError) {
+      console.warn("Exception while logging notification:", logError);
     }
 
+    console.log("=== Success! Returning response ===");
     return new Response(
       JSON.stringify({
         success: true,
         message: "Notification sent successfully",
-        notificationType: typedSettings.notification_type,
+        channelName: settings.name,
+        notificationType: settings.notification_type,
+        timestamp: new Date().toISOString(),
       }),
       {
         status: 200,
@@ -163,15 +257,34 @@ serve(async (req) => {
       },
     );
   } catch (error: any) {
-    console.error("Error sending LINE notification:", error);
+    console.error("=== ERROR in Edge Function ===");
+    console.error("Error type:", error.constructor.name);
+    console.error("Error message:", error.message);
+    console.error("Error stack:", error.stack);
+
+    const errorMessage = error.message || "An unexpected error occurred";
+    const isNotFound =
+      errorMessage.includes("not found") ||
+      errorMessage.includes("not configured") ||
+      errorMessage.includes("No active");
+
+    const isValidationError =
+      errorMessage.includes("required") ||
+      errorMessage.includes("cannot be empty") ||
+      errorMessage.includes("cannot exceed");
+
+    const statusCode = isNotFound ? 404 : isValidationError ? 400 : 500;
+
+    console.log("Returning error response with status:", statusCode);
 
     return new Response(
       JSON.stringify({
-        error: error.message || "An unexpected error occurred",
+        error: errorMessage,
         success: false,
+        timestamp: new Date().toISOString(),
       }),
       {
-        status: error.message.includes("not configured") || error.message.includes("not found") ? 404 : 500,
+        status: statusCode,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       },
     );

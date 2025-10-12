@@ -38,30 +38,25 @@ export const LINENotificationSender = ({ userId, role }: LINENotificationSenderP
 
   useEffect(() => {
     fetchChannels();
-  }, []);
+  }, [userId, role]);
 
   const fetchChannels = async () => {
     setIsFetchingChannels(true);
     try {
-      if (role === "super_admin") {
-        // Super admin can see all channels
+      if (role === "super_admin" || role === "admin") {
+        // Super admin and admin can see all enabled channels
         const { data, error } = await supabase
           .from("line_notifications")
-          .select("id, name, description, notification_type")
+          .select("id, name, description, notification_type, enabled")
           .eq("enabled", true)
           .order("name");
 
-        if (error) throw error;
-        setChannels(data || []);
-      } else if (role === "admin") {
-        // Admin can see all enabled channels
-        const { data, error } = await supabase
-          .from("line_notifications")
-          .select("id, name, description, notification_type")
-          .eq("enabled", true)
-          .order("name");
+        if (error) {
+          console.error("Error fetching channels for admin:", error);
+          throw error;
+        }
 
-        if (error) throw error;
+        console.log("Admin channels fetched:", data);
         setChannels(data || []);
       } else {
         // Teachers can only see their assigned channels
@@ -70,48 +65,67 @@ export const LINENotificationSender = ({ userId, role }: LINENotificationSenderP
           .select(
             `
             line_notification_id,
-            line_notifications:line_notification_id (
+            line_notifications!inner (
               id,
               name,
               description,
-              notification_type
+              notification_type,
+              enabled
             )
           `,
           )
           .eq("teacher_id", userId);
 
-        if (error) throw error;
+        if (error) {
+          console.error("Error fetching channels for teacher:", error);
+          throw error;
+        }
 
+        console.log("Teacher channel assignments:", data);
+
+        // Map and filter channels properly
         const teacherChannels =
           data
-            ?.map((item: any) => ({
-              id: item.line_notifications?.id || item.line_notification_id,
-              name: item.line_notifications?.name || "Unknown Channel",
-              description: item.line_notifications?.description,
-              notification_type: item.line_notifications?.notification_type,
+            ?.filter((item: any) => item.line_notifications?.enabled === true)
+            .map((item: any) => ({
+              id: item.line_notifications.id,
+              name: item.line_notifications.name || "Unknown Channel",
+              description: item.line_notifications.description,
+              notification_type: item.line_notifications.notification_type,
             }))
             .filter((channel) => channel.id) || [];
 
+        console.log("Mapped teacher channels:", teacherChannels);
         setChannels(teacherChannels);
       }
     } catch (error: any) {
+      console.error("Error in fetchChannels:", error);
       toast({
         variant: "destructive",
         title: "เกิดข้อผิดพลาด",
-        description: "ไม่สามารถโหลด LINE Channel ได้",
+        description: `ไม่สามารถโหลด LINE Channel ได้: ${error.message}`,
       });
-      console.error("Error fetching channels:", error);
     } finally {
       setIsFetchingChannels(false);
     }
   };
 
   const handleSend = async () => {
-    if (!selectedChannel || !message.trim()) {
+    // Validation
+    if (!selectedChannel) {
       toast({
         variant: "destructive",
-        title: "กรุณากรอกข้อมูลให้ครบ",
-        description: "กรุณาเลือก Channel และพิมพ์ข้อความ",
+        title: "กรุณาเลือก Channel",
+        description: "กรุณาเลือก Channel ที่ต้องการส่งข้อความ",
+      });
+      return;
+    }
+
+    if (!message.trim()) {
+      toast({
+        variant: "destructive",
+        title: "กรุณากรอกข้อความ",
+        description: "กรุณาพิมพ์ข้อความที่ต้องการส่ง",
       });
       return;
     }
@@ -120,35 +134,62 @@ export const LINENotificationSender = ({ userId, role }: LINENotificationSenderP
       toast({
         variant: "destructive",
         title: "ข้อความยาวเกินไป",
-        description: `ข้อความต้องไม่เกิน ${MAX_MESSAGE_LENGTH} ตัวอักษร`,
+        description: `ข้อความต้องไม่เกิน ${MAX_MESSAGE_LENGTH.toLocaleString()} ตัวอักษร`,
       });
       return;
     }
 
     setIsLoading(true);
+
+    console.log("Sending message to channel:", selectedChannel);
+    console.log("Message:", message.trim());
+
     try {
-      const { error } = await supabase.functions.invoke("send-line-notification", {
+      const { data, error } = await supabase.functions.invoke("send-line-notification", {
         body: {
           message: message.trim(),
           channelId: selectedChannel,
         },
       });
 
-      if (error) throw error;
+      console.log("Edge function response:", { data, error });
+
+      if (error) {
+        console.error("Edge function error:", error);
+        throw new Error(error.message || "Failed to send message");
+      }
+
+      // Check if the edge function returned an error in the response
+      if (data?.error) {
+        console.error("Edge function returned error:", data.error);
+        throw new Error(data.error);
+      }
 
       toast({
         title: "ส่งข้อความสำเร็จ",
-        description: "ส่งข้อความไปยัง LINE แล้ว",
+        description: "ส่งข้อความไปยัง LINE เรียบร้อยแล้ว",
+        duration: 5000,
       });
 
       // Reset form
       setMessage("");
       setSelectedChannel("");
     } catch (error: any) {
+      console.error("Error sending message:", error);
+
+      let errorMessage = "ไม่สามารถส่งข้อความได้";
+
+      if (error.message) {
+        errorMessage = error.message;
+      } else if (typeof error === "string") {
+        errorMessage = error;
+      }
+
       toast({
         variant: "destructive",
         title: "เกิดข้อผิดพลาด",
-        description: error.message || "ไม่สามารถส่งข้อความได้",
+        description: errorMessage,
+        duration: 7000,
       });
     } finally {
       setIsLoading(false);
@@ -206,6 +247,9 @@ export const LINENotificationSender = ({ userId, role }: LINENotificationSenderP
                   {role === "teacher"
                     ? "กรุณาติดต่อผู้ดูแลระบบเพื่อขอสิทธิ์เข้าถึง LINE Channel"
                     : "กรุณาเพิ่ม LINE Channel ในส่วนการตั้งค่าก่อนใช้งาน"}
+                </p>
+                <p className="text-xs text-gray-600 mt-2">
+                  User ID: {userId} | Role: {role}
                 </p>
               </AlertDescription>
             </Alert>
@@ -287,7 +331,7 @@ export const LINENotificationSender = ({ userId, role }: LINENotificationSenderP
                             : "text-gray-500"
                       }`}
                     >
-                      {messageLength} / {MAX_MESSAGE_LENGTH}
+                      {messageLength} / {MAX_MESSAGE_LENGTH.toLocaleString()}
                     </span>
                   </div>
                 </div>

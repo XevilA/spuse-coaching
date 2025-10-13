@@ -98,6 +98,7 @@ export type Database = {
           created_at: string | null
           file_name: string
           file_url: string
+          group_id: string | null
           id: string
           notes: string | null
           ocr_data: Json | null
@@ -105,6 +106,7 @@ export type Database = {
           session_number: number
           status: Database["public"]["Enums"]["coaching_status"] | null
           student_id: string
+          teacher_comment: string | null
           teacher_id: string | null
           updated_at: string | null
         }
@@ -113,6 +115,7 @@ export type Database = {
           created_at?: string | null
           file_name: string
           file_url: string
+          group_id?: string | null
           id?: string
           notes?: string | null
           ocr_data?: Json | null
@@ -120,6 +123,7 @@ export type Database = {
           session_number: number
           status?: Database["public"]["Enums"]["coaching_status"] | null
           student_id: string
+          teacher_comment?: string | null
           teacher_id?: string | null
           updated_at?: string | null
         }
@@ -128,6 +132,7 @@ export type Database = {
           created_at?: string | null
           file_name?: string
           file_url?: string
+          group_id?: string | null
           id?: string
           notes?: string | null
           ocr_data?: Json | null
@@ -135,10 +140,19 @@ export type Database = {
           session_number?: number
           status?: Database["public"]["Enums"]["coaching_status"] | null
           student_id?: string
+          teacher_comment?: string | null
           teacher_id?: string | null
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "coaching_sessions_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "student_groups"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       coaching_settings: {
         Row: {
@@ -522,6 +536,7 @@ export type Database = {
           id: string
           major: string
           name: string
+          required_sessions: number
           year_level: string
         }
         Insert: {
@@ -529,6 +544,7 @@ export type Database = {
           id?: string
           major: string
           name: string
+          required_sessions?: number
           year_level: string
         }
         Update: {
@@ -536,6 +552,7 @@ export type Database = {
           id?: string
           major?: string
           name?: string
+          required_sessions?: number
           year_level?: string
         }
         Relationships: []

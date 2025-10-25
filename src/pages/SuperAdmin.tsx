@@ -57,18 +57,15 @@ export default function SuperAdmin() {
   const [groupMembers, setGroupMembers] = useState<any[]>([]);
   const [minSessions, setMinSessions] = useState("10");
   const [isLoading, setIsLoading] = useState(true);
-  const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [isAddGroupOpen, setIsAddGroupOpen] = useState(false);
+  const [isEditGroupOpen, setIsEditGroupOpen] = useState(false);
   const [isAddLineChannelOpen, setIsAddLineChannelOpen] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<any>(null);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [roleFilter, setRoleFilter] = useState<string>("all");
   const [groupSearchQuery, setGroupSearchQuery] = useState("");
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<{ type: string; id: string; name: string } | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formErrors, setFormErrors] = useState<any>({});
 
   // NEW: Track assignment operations
   const [isAssigningTeacher, setIsAssigningTeacher] = useState(false);
@@ -76,14 +73,12 @@ export default function SuperAdmin() {
   const [selectedTeacher, setSelectedTeacher] = useState("");
   const [selectedStudent, setSelectedStudent] = useState("");
 
-  const [newUser, setNewUser] = useState({
-    email: "",
-    password: "",
-    firstName: "",
-    lastName: "",
-    role: "student",
-  });
   const [newGroup, setNewGroup] = useState({
+    name: "",
+    major: "",
+    yearLevel: "",
+  });
+  const [editGroup, setEditGroup] = useState({
     name: "",
     major: "",
     yearLevel: "",
@@ -177,18 +172,6 @@ export default function SuperAdmin() {
     }
   };
 
-  const validateUserForm = () => {
-    const errors: any = {};
-    if (!newUser.email) errors.email = "กรุณากรอกอีเมล";
-    if (!newUser.email.includes("@")) errors.email = "รูปแบบอีเมลไม่ถูกต้อง";
-    if (!newUser.password) errors.password = "กรุณากรอกรหัสผ่าน";
-    if (newUser.password.length < 6) errors.password = "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร";
-    if (!newUser.firstName) errors.firstName = "กรุณากรอกชื่อ";
-    if (!newUser.lastName) errors.lastName = "กรุณากรอกนามสกุล";
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
   const updateSettings = async () => {
     try {
       const { error } = await supabase
@@ -211,78 +194,11 @@ export default function SuperAdmin() {
     }
   };
 
-  const handleAddUser = async () => {
-    if (!validateUserForm()) return;
-
-    setIsSubmitting(true);
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email: newUser.email,
-        password: newUser.password,
-        options: {
-          data: {
-            first_name: newUser.firstName,
-            last_name: newUser.lastName,
-          },
-        },
-      });
-
-      if (error) throw error;
-
-      if (data.user) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-
-        const { error: roleError } = await supabase
-          .from("user_roles")
-          .update({ role: newUser.role as "student" | "teacher" | "admin" | "super_admin" })
-          .eq("user_id", data.user.id);
-
-        if (roleError) {
-          console.error("Role update error:", roleError);
-        }
-
-        const profileUpdates: any = {};
-        if (newUser.role === "student" && newUser.email.includes("@spumail.net")) {
-          profileUpdates.student_id = newUser.email.split("@")[0];
-        } else if (newUser.role === "teacher" && newUser.email.includes("@spu.ac.th")) {
-          profileUpdates.employee_id = newUser.email.split("@")[0];
-        }
-
-        if (Object.keys(profileUpdates).length > 0) {
-          await supabase.from("profiles").update(profileUpdates).eq("id", data.user.id);
-        }
-      }
-
-      toast({
-        title: "เพิ่มผู้ใช้สำเร็จ",
-        description: `เพิ่ม ${newUser.email} แล้ว`,
-      });
-
-      setIsAddUserOpen(false);
-      setNewUser({ email: "", password: "", firstName: "", lastName: "", role: "student" });
-      setFormErrors({});
-      if (user) fetchData(user.id);
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "ไม่สามารถเพิ่มผู้ใช้ได้",
-        description: error.message,
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const handleDeleteConfirm = async () => {
     if (!itemToDelete) return;
 
     try {
-      if (itemToDelete.type === "user") {
-        await supabase.from("user_roles").delete().eq("user_id", itemToDelete.id);
-        const { error } = await supabase.from("profiles").delete().eq("id", itemToDelete.id);
-        if (error) throw error;
-        toast({ title: "ลบผู้ใช้สำเร็จ" });
-      } else if (itemToDelete.type === "group") {
+      if (itemToDelete.type === "group") {
         const { error } = await supabase.from("student_groups").delete().eq("id", itemToDelete.id);
         if (error) throw error;
         toast({ title: "ลบกลุ่มสำเร็จ" });
@@ -305,11 +221,6 @@ export default function SuperAdmin() {
     }
   };
 
-  const handleDeleteUser = (userId: string, email: string) => {
-    setItemToDelete({ type: "user", id: userId, name: email });
-    setDeleteConfirmOpen(true);
-  };
-
   const handleDeleteGroup = (groupId: string, groupName: string) => {
     setItemToDelete({ type: "group", id: groupId, name: groupName });
     setDeleteConfirmOpen(true);
@@ -318,42 +229,6 @@ export default function SuperAdmin() {
   const handleDeleteLineChannel = (channelId: string, channelName: string) => {
     setItemToDelete({ type: "line_channel", id: channelId, name: channelName });
     setDeleteConfirmOpen(true);
-  };
-
-  const exportReport = (format: "pdf" | "excel" | "csv") => {
-    const exportData = users.map((u) => ({
-      Email: u.email,
-      ชื่อ: u.first_name,
-      นามสกุล: u.last_name,
-      บทบาท:
-        u.user_roles?.[0]?.role === "super_admin"
-          ? "Super Admin"
-          : u.user_roles?.[0]?.role === "admin"
-            ? "ผู้ดูแลระบบ"
-            : u.user_roles?.[0]?.role === "teacher"
-              ? "อาจารย์"
-              : "นักศึกษา",
-      รหัสนักศึกษา: u.student_id || "-",
-      รหัสพนักงาน: u.employee_id || "-",
-    }));
-
-    if (format === "pdf") {
-      exportToPDF(
-        exportData,
-        "รายงานผู้ใช้งานระบบ",
-        ["Email", "ชื่อ", "นามสกุล", "บทบาท", "รหัสนักศึกษา", "รหัสพนักงาน"],
-        ["Email", "ชื่อ", "นามสกุล", "บทบาท", "รหัสนักศึกษา", "รหัสพนักงาน"],
-      );
-    } else if (format === "excel") {
-      exportToExcel(exportData, "รายงานผู้ใช้งานระบบ", "ผู้ใช้");
-    } else {
-      exportToCSV(exportData, "รายงานผู้ใช้งานระบบ");
-    }
-
-    toast({
-      title: "ส่งออกสำเร็จ",
-      description: `ดาวน์โหลดรายงานแล้ว (${format.toUpperCase()})`,
-    });
   };
 
   const handleAddGroup = async () => {
@@ -392,6 +267,60 @@ export default function SuperAdmin() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleEditGroup = async () => {
+    if (!editGroup.name || !editGroup.major || !editGroup.yearLevel) {
+      toast({
+        variant: "destructive",
+        title: "กรุณากรอกข้อมูลให้ครบถ้วน",
+      });
+      return;
+    }
+
+    if (!editingGroup) return;
+
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase
+        .from("student_groups")
+        .update({
+          name: editGroup.name,
+          major: editGroup.major,
+          year_level: editGroup.yearLevel,
+        })
+        .eq("id", editingGroup.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "แก้ไขกลุ่มสำเร็จ",
+        description: `แก้ไขกลุ่ม ${editGroup.name} แล้ว`,
+      });
+
+      setIsEditGroupOpen(false);
+      setEditingGroup(null);
+      setEditGroup({ name: "", major: "", yearLevel: "" });
+      if (user) fetchData(user.id);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "ไม่สามารถแก้ไขกลุ่มได้",
+        description: error.message,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const openEditGroupDialog = (group: any) => {
+    setEditingGroup(group);
+    setEditGroup({
+      name: group.name,
+      major: group.major,
+      yearLevel: group.year_level,
+    });
+    setIsEditGroupOpen(true);
   };
 
   const handleAddLineChannel = async () => {
@@ -646,20 +575,6 @@ export default function SuperAdmin() {
     }
   };
 
-  // Filter users based on search and role
-  const filteredUsers = users.filter((u) => {
-    const matchesSearch =
-      u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.first_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.last_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.student_id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.employee_id?.toLowerCase().includes(searchQuery.toLowerCase());
-
-    const matchesRole = roleFilter === "all" || u.user_roles?.[0]?.role === roleFilter;
-
-    return matchesSearch && matchesRole;
-  });
-
   // Filter groups based on search
   const filteredGroups = groups.filter(
     (g) =>
@@ -783,18 +698,12 @@ export default function SuperAdmin() {
           </div>
 
           <Tabs defaultValue="dashboard" className="w-full">
-            <TabsList className="grid w-full grid-cols-5 h-auto p-1">
+            <TabsList className="grid w-full grid-cols-4 h-auto p-1">
               <TabsTrigger
                 value="dashboard"
                 className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
               >
                 Dashboard
-              </TabsTrigger>
-              <TabsTrigger
-                value="users"
-                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-              >
-                จัดการผู้ใช้
               </TabsTrigger>
               <TabsTrigger
                 value="groups"
@@ -818,293 +727,6 @@ export default function SuperAdmin() {
 
             <TabsContent value="dashboard" className="space-y-4 animate-in fade-in duration-300">
               <DashboardStats stats={dashboardStats} />
-            </TabsContent>
-
-            <TabsContent value="users" className="space-y-4 animate-in fade-in duration-300">
-              <Card>
-                <CardHeader>
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div>
-                      <CardTitle className="flex items-center gap-2">
-                        <Users className="w-5 h-5" />
-                        จัดการผู้ใช้งานทั้งหมด
-                      </CardTitle>
-                      <CardDescription>
-                        เพิ่ม แก้ไข หรือลบผู้ใช้งานในระบบ ({filteredUsers.length} จาก {users.length})
-                      </CardDescription>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button variant="outline" size="sm" onClick={() => exportReport("pdf")}>
-                            <Download className="w-4 h-4 mr-2" />
-                            PDF
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>ส่งออกเป็นไฟล์ PDF</TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button variant="outline" size="sm" onClick={() => exportReport("excel")}>
-                            <Download className="w-4 h-4 mr-2" />
-                            Excel
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>ส่งออกเป็นไฟล์ Excel</TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button variant="outline" size="sm" onClick={() => exportReport("csv")}>
-                            <Download className="w-4 h-4 mr-2" />
-                            CSV
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>ส่งออกเป็นไฟล์ CSV</TooltipContent>
-                      </Tooltip>
-                      <Dialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen}>
-                        <DialogTrigger asChild>
-                          <Button className="bg-primary hover:bg-primary/90">
-                            <UserPlus className="w-4 h-4 mr-2" />
-                            เพิ่มผู้ใช้
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="sm:max-w-[500px]">
-                          <DialogHeader>
-                            <DialogTitle>เพิ่มผู้ใช้ใหม่</DialogTitle>
-                            <DialogDescription>กรอกข้อมูลผู้ใช้ใหม่ เพื่อเพิ่มเข้าสู่ระบบ</DialogDescription>
-                          </DialogHeader>
-                          <div className="space-y-4 py-4">
-                            <div className="grid grid-cols-2 gap-4">
-                              <div className="space-y-2">
-                                <Label htmlFor="firstName">
-                                  ชื่อ <span className="text-red-500">*</span>
-                                </Label>
-                                <Input
-                                  id="firstName"
-                                  value={newUser.firstName}
-                                  onChange={(e) => {
-                                    setNewUser({ ...newUser, firstName: e.target.value });
-                                    if (formErrors.firstName) setFormErrors({ ...formErrors, firstName: undefined });
-                                  }}
-                                  className={formErrors.firstName ? "border-red-500" : ""}
-                                />
-                                {formErrors.firstName && <p className="text-xs text-red-500">{formErrors.firstName}</p>}
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="lastName">
-                                  นามสกุล <span className="text-red-500">*</span>
-                                </Label>
-                                <Input
-                                  id="lastName"
-                                  value={newUser.lastName}
-                                  onChange={(e) => {
-                                    setNewUser({ ...newUser, lastName: e.target.value });
-                                    if (formErrors.lastName) setFormErrors({ ...formErrors, lastName: undefined });
-                                  }}
-                                  className={formErrors.lastName ? "border-red-500" : ""}
-                                />
-                                {formErrors.lastName && <p className="text-xs text-red-500">{formErrors.lastName}</p>}
-                              </div>
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="email">
-                                อีเมล <span className="text-red-500">*</span>
-                              </Label>
-                              <Input
-                                id="email"
-                                type="email"
-                                placeholder="example@email.com"
-                                value={newUser.email}
-                                onChange={(e) => {
-                                  setNewUser({ ...newUser, email: e.target.value });
-                                  if (formErrors.email) setFormErrors({ ...formErrors, email: undefined });
-                                }}
-                                className={formErrors.email ? "border-red-500" : ""}
-                              />
-                              {formErrors.email && <p className="text-xs text-red-500">{formErrors.email}</p>}
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="password">
-                                รหัสผ่าน <span className="text-red-500">*</span>
-                              </Label>
-                              <div className="relative">
-                                <Input
-                                  id="password"
-                                  type={showPassword ? "text" : "password"}
-                                  placeholder="อย่างน้อย 6 ตัวอักษร"
-                                  value={newUser.password}
-                                  onChange={(e) => {
-                                    setNewUser({ ...newUser, password: e.target.value });
-                                    if (formErrors.password) setFormErrors({ ...formErrors, password: undefined });
-                                  }}
-                                  className={formErrors.password ? "border-red-500 pr-10" : "pr-10"}
-                                />
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                                  onClick={() => setShowPassword(!showPassword)}
-                                >
-                                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                </Button>
-                              </div>
-                              {formErrors.password && <p className="text-xs text-red-500">{formErrors.password}</p>}
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="role">
-                                บทบาท <span className="text-red-500">*</span>
-                              </Label>
-                              <Select
-                                value={newUser.role}
-                                onValueChange={(value) => setNewUser({ ...newUser, role: value })}
-                              >
-                                <SelectTrigger id="role">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="student">นักศึกษา</SelectItem>
-                                  <SelectItem value="teacher">อาจารย์</SelectItem>
-                                  <SelectItem value="admin">ผู้ดูแลระบบ</SelectItem>
-                                  <SelectItem value="super_admin">Super Admin</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-                          <DialogFooter>
-                            <Button
-                              variant="outline"
-                              onClick={() => {
-                                setIsAddUserOpen(false);
-                                setFormErrors({});
-                              }}
-                              disabled={isSubmitting}
-                            >
-                              ยกเลิก
-                            </Button>
-                            <Button onClick={handleAddUser} disabled={isSubmitting}>
-                              {isSubmitting ? (
-                                <>
-                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                  กำลังเพิ่ม...
-                                </>
-                              ) : (
-                                <>
-                                  <UserPlus className="w-4 h-4 mr-2" />
-                                  เพิ่มผู้ใช้
-                                </>
-                              )}
-                            </Button>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Search and Filter */}
-                  <div className="flex flex-col md:flex-row gap-4">
-                    <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        placeholder="ค้นหาด้วยชื่อ, อีเมล, หรือรหัส..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-10"
-                      />
-                    </div>
-                    <Select value={roleFilter} onValueChange={setRoleFilter}>
-                      <SelectTrigger className="w-full md:w-[200px]">
-                        <Filter className="w-4 h-4 mr-2" />
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">บทบาททั้งหมด</SelectItem>
-                        <SelectItem value="student">นักศึกษา</SelectItem>
-                        <SelectItem value="teacher">อาจารย์</SelectItem>
-                        <SelectItem value="admin">ผู้ดูแลระบบ</SelectItem>
-                        <SelectItem value="super_admin">Super Admin</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Users Table */}
-                  {filteredUsers.length === 0 ? (
-                    <Alert>
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription>
-                        {searchQuery || roleFilter !== "all"
-                          ? "ไม่พบผู้ใช้ที่ตรงกับเงื่อนไขการค้นหา"
-                          : "ยังไม่มีผู้ใช้ในระบบ"}
-                      </AlertDescription>
-                    </Alert>
-                  ) : (
-                    <div className="rounded-md border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-muted/50">
-                            <TableHead>อีเมล</TableHead>
-                            <TableHead>ชื่อ-นามสกุล</TableHead>
-                            <TableHead>บทบาท</TableHead>
-                            <TableHead>รหัส</TableHead>
-                            <TableHead className="text-right">ดำเนินการ</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {filteredUsers.map((u: any) => (
-                            <TableRow key={u.id} className="hover:bg-muted/50 transition-colors">
-                              <TableCell className="font-medium">{u.email}</TableCell>
-                              <TableCell>{`${u.first_name} ${u.last_name}`}</TableCell>
-                              <TableCell>
-                                <Badge
-                                  variant={
-                                    u.user_roles?.[0]?.role === "super_admin"
-                                      ? "default"
-                                      : u.user_roles?.[0]?.role === "admin"
-                                        ? "secondary"
-                                        : u.user_roles?.[0]?.role === "teacher"
-                                          ? "outline"
-                                          : "outline"
-                                  }
-                                >
-                                  {u.user_roles?.[0]?.role === "super_admin"
-                                    ? "Super Admin"
-                                    : u.user_roles?.[0]?.role === "admin"
-                                      ? "ผู้ดูแลระบบ"
-                                      : u.user_roles?.[0]?.role === "teacher"
-                                        ? "อาจารย์"
-                                        : "นักศึกษา"}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-sm text-muted-foreground">
-                                {u.student_id || u.employee_id || "-"}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => handleDeleteUser(u.id, u.email)}
-                                      disabled={u.id === user?.id}
-                                      className="hover:bg-red-50 hover:text-red-600"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    {u.id === user?.id ? "ไม่สามารถลบตัวเองได้" : "ลบผู้ใช้"}
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
             </TabsContent>
 
             <TabsContent value="groups" className="space-y-4 animate-in fade-in duration-300">
@@ -1181,6 +803,73 @@ export default function SuperAdmin() {
                         </DialogFooter>
                       </DialogContent>
                     </Dialog>
+
+                    {/* Edit Group Dialog */}
+                    <Dialog open={isEditGroupOpen} onOpenChange={setIsEditGroupOpen}>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>แก้ไขกลุ่ม</DialogTitle>
+                          <DialogDescription>แก้ไขข้อมูลกลุ่มนักศึกษา</DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="editGroupName">
+                              ชื่อกลุ่ม <span className="text-red-500">*</span>
+                            </Label>
+                            <Input
+                              id="editGroupName"
+                              placeholder="เช่น กลุ่ม 1, Section A"
+                              value={editGroup.name}
+                              onChange={(e) => setEditGroup({ ...editGroup, name: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="editMajor">
+                              สาขา <span className="text-red-500">*</span>
+                            </Label>
+                            <Input
+                              id="editMajor"
+                              placeholder="เช่น วิทยาการคอมพิวเตอร์"
+                              value={editGroup.major}
+                              onChange={(e) => setEditGroup({ ...editGroup, major: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="editYearLevel">
+                              ชั้นปี <span className="text-red-500">*</span>
+                            </Label>
+                            <Input
+                              id="editYearLevel"
+                              placeholder="เช่น 1, 2, 3, 4"
+                              value={editGroup.yearLevel}
+                              onChange={(e) => setEditGroup({ ...editGroup, yearLevel: e.target.value })}
+                            />
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setIsEditGroupOpen(false);
+                              setEditingGroup(null);
+                            }}
+                            disabled={isSubmitting}
+                          >
+                            ยกเลิก
+                          </Button>
+                          <Button onClick={handleEditGroup} disabled={isSubmitting}>
+                            {isSubmitting ? (
+                              <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                กำลังบันทึก...
+                              </>
+                            ) : (
+                              "บันทึกการเปลี่ยนแปลง"
+                            )}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -1222,6 +911,32 @@ export default function SuperAdmin() {
                                 <TableCell>{group.major}</TableCell>
                                 <TableCell>{group.year_level}</TableCell>
                                 <TableCell className="text-right space-x-2">
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => openEditGroupDialog(group)}
+                                        className="hover:bg-blue-50 hover:text-blue-600"
+                                      >
+                                        <svg
+                                          xmlns="http://www.w3.org/2000/svg"
+                                          fill="none"
+                                          viewBox="0 0 24 24"
+                                          strokeWidth={1.5}
+                                          stroke="currentColor"
+                                          className="w-4 h-4"
+                                        >
+                                          <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"
+                                          />
+                                        </svg>
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>แก้ไขกลุ่ม</TooltipContent>
+                                  </Tooltip>
                                   <Button
                                     variant="outline"
                                     size="sm"

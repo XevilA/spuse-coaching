@@ -57,6 +57,8 @@ const Teacher = () => {
   const [commentDialogOpen, setCommentDialogOpen] = useState(false);
   const [currentSession, setCurrentSession] = useState<any>(null);
   const [sessionComment, setSessionComment] = useState("");
+  const [groups, setGroups] = useState<any[]>([]);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -120,7 +122,7 @@ const Teacher = () => {
 
   const fetchData = async (teacherId: string) => {
     try {
-      const [sessionsRes, leaveRes, roomRes, eventRes, assignmentsRes, allSessionsRes] = await Promise.all([
+      const [sessionsRes, leaveRes, roomRes, eventRes, assignmentsRes, allSessionsRes, groupsRes] = await Promise.all([
         supabase
           .from("coaching_sessions")
           .select(
@@ -184,12 +186,15 @@ const Teacher = () => {
           `,
           )
           .order("created_at", { ascending: false }),
+        
+        supabase.from("student_groups").select("*").order("name"),
       ]);
 
       setSessions(sessionsRes.data || []);
       setLeaveRequests(leaveRes.data || []);
       setRoomBookings(roomRes.data || []);
       setEventRequests(eventRes.data || []);
+      setGroups(groupsRes.data || []);
 
       if (assignmentsRes.data) {
         const groupIds = assignmentsRes.data.map((a) => a.group_id);
@@ -277,6 +282,39 @@ const Teacher = () => {
     }
   };
 
+  const handleSaveGroup = async () => {
+    if (!profile?.group_id) {
+      toast({
+        variant: "destructive",
+        title: "กรุณาเลือกกลุ่ม",
+      });
+      return;
+    }
+
+    setIsSavingProfile(true);
+    try {
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({ group_id: profile.group_id })
+        .eq("id", user.id);
+
+      if (profileError) throw profileError;
+
+      toast({
+        title: "บันทึกสำเร็จ",
+        description: "บันทึกกลุ่มของคุณแล้ว",
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+      });
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
   const viewFile = async (fileUrl: string) => {
     try {
       const { data, error } = await supabase.storage.from("coaching-forms").createSignedUrl(fileUrl, 60);
@@ -318,6 +356,45 @@ const Teacher = () => {
   return (
     <DashboardLayout role="teacher" userName={`${profile?.first_name || ""} ${profile?.last_name || ""}`}>
       <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-500 p-2 sm:p-4 md:p-0">
+        {/* Personal Information Section */}
+        <Card className="shadow-sm border-l-4 border-l-primary">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">ข้อมูลส่วนตัว</CardTitle>
+            <CardDescription>เลือกกลุ่มที่คุณดูแล</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="teacher-group">กลุ่ม</Label>
+                <Select
+                  value={profile?.group_id || ""}
+                  onValueChange={(value) => setProfile((prev: any) => ({ ...prev, group_id: value }))}
+                >
+                  <SelectTrigger id="teacher-group" className="bg-background">
+                    <SelectValue placeholder="เลือกกลุ่ม" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-popover border shadow-md z-50">
+                    {groups.map((group) => (
+                      <SelectItem key={group.id} value={group.id}>
+                        {group.name} - {group.major} ปี {group.year_level}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-end">
+                <Button
+                  onClick={handleSaveGroup}
+                  disabled={isSavingProfile || !profile?.group_id}
+                  className="w-full"
+                >
+                  {isSavingProfile ? "กำลังบันทึก..." : "บันทึกกลุ่ม"}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Mobile-Optimized Summary Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 sm:gap-3 md:gap-4">
           <Card className="hover:shadow-lg transition-all duration-300 border-l-4 border-l-blue-500 shadow-sm">

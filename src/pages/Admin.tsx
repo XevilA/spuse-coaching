@@ -22,6 +22,7 @@ export default function Admin() {
   const [groups, setGroups] = useState<any[]>([]);
   const [minSessions, setMinSessions] = useState("10");
   const [isLoading, setIsLoading] = useState(true);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [newUser, setNewUser] = useState({
     email: "",
     password: "",
@@ -110,6 +111,39 @@ export default function Admin() {
     }
   };
 
+  const handleSaveGroup = async () => {
+    if (!profile?.group_id) {
+      toast({
+        variant: "destructive",
+        title: "กรุณาเลือกกลุ่ม",
+      });
+      return;
+    }
+
+    setIsSavingProfile(true);
+    try {
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({ group_id: profile.group_id })
+        .eq("id", user.id);
+
+      if (profileError) throw profileError;
+
+      toast({
+        title: "บันทึกสำเร็จ",
+        description: "บันทึกกลุ่มของคุณแล้ว",
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+      });
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
   const exportReport = () => {
     const csv = [
       ["Email", "ชื่อ", "นามสกุล", "บทบาท"],
@@ -162,6 +196,45 @@ export default function Admin() {
   return (
     <DashboardLayout role="admin" userName={`${profile?.first_name || ""} ${profile?.last_name || ""}`}>
       <div className="space-y-6">
+        {/* Personal Information Section */}
+        <Card className="shadow-sm border-l-4 border-l-primary">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">ข้อมูลส่วนตัว</CardTitle>
+            <CardDescription>เลือกกลุ่มที่คุณดูแล</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="admin-group">กลุ่ม</Label>
+                <Select
+                  value={profile?.group_id || ""}
+                  onValueChange={(value) => setProfile((prev: any) => ({ ...prev, group_id: value }))}
+                >
+                  <SelectTrigger id="admin-group" className="bg-background">
+                    <SelectValue placeholder="เลือกกลุ่ม" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-popover border shadow-md z-50">
+                    {groups.map((group) => (
+                      <SelectItem key={group.id} value={group.id}>
+                        {group.name} - {group.major} ปี {group.year_level}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-end">
+                <Button
+                  onClick={handleSaveGroup}
+                  disabled={isSavingProfile || !profile?.group_id}
+                  className="w-full"
+                >
+                  {isSavingProfile ? "กำลังบันทึก..." : "บันทึกกลุ่ม"}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         <Tabs defaultValue="dashboard" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>

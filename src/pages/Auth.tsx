@@ -186,17 +186,27 @@ export default function Auth() {
       subtitle="มหาวิทยาลัยศรีปทุม"
     >
       <Tabs defaultValue="login" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 mb-6">
-          <TabsTrigger value="login">เข้าสู่ระบบ</TabsTrigger>
-          <TabsTrigger value="register">ลงทะเบียน</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-2 mb-6 bg-muted/50 backdrop-blur-sm p-1">
+          <TabsTrigger 
+            value="login" 
+            className="data-[state=active]:bg-card data-[state=active]:shadow-elegant transition-all duration-300"
+          >
+            เข้าสู่ระบบ
+          </TabsTrigger>
+          <TabsTrigger 
+            value="register"
+            className="data-[state=active]:bg-card data-[state=active]:shadow-elegant transition-all duration-300"
+          >
+            ลงทะเบียน
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="login">
+        <TabsContent value="login" className="animate-fade-in-up">
           <form onSubmit={handleLogin} className="space-y-4">
             <Button
               type="button"
               variant="outline"
-              className="w-full gap-2 hover-scale animate-fade-in"
+              className="w-full gap-2 apple-button animate-stagger-1"
               onClick={handleGoogleLogin}
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -208,48 +218,50 @@ export default function Auth() {
               เข้าสู่ระบบด้วย Google
             </Button>
 
-            <div className="relative">
+            <div className="relative animate-stagger-2">
               <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
+                <span className="w-full border-t border-border/50" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">หรือ</span>
+                <span className="bg-card/80 backdrop-blur-sm px-3 py-1 rounded-full text-muted-foreground">หรือ</span>
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="login-email">อีเมล</Label>
+            <div className="space-y-2 animate-stagger-3">
+              <Label htmlFor="login-email" className="text-sm font-medium">อีเมล</Label>
               <Input
                 id="login-email"
                 type="email"
                 placeholder="example@spumail.net"
                 value={loginData.email}
                 onChange={(e) => setLoginData({ ...loginData, email: e.target.value })}
+                className="apple-input"
                 required
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="login-password">รหัสผ่าน</Label>
+            <div className="space-y-2 animate-stagger-4">
+              <Label htmlFor="login-password" className="text-sm font-medium">รหัสผ่าน</Label>
               <Input
                 id="login-password"
                 type="password"
                 value={loginData.password}
                 onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
+                className="apple-input"
                 required
               />
             </div>
-            <Button type="submit" className="w-full hover-scale" disabled={isLoading}>
+            <Button type="submit" className="w-full apple-button-primary animate-stagger-5" disabled={isLoading}>
               {isLoading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
             </Button>
           </form>
         </TabsContent>
 
-        <TabsContent value="register">
+        <TabsContent value="register" className="animate-fade-in-up">
           <form onSubmit={handleRegister} className="space-y-4">
             <Button
               type="button"
               variant="outline"
-              className="w-full gap-2 hover-scale animate-fade-in"
+              className="w-full gap-2 apple-button animate-stagger-1"
               onClick={handleGoogleLogin}
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -261,67 +273,71 @@ export default function Auth() {
               ลงทะเบียนด้วย Google
             </Button>
 
-            <div className="relative">
+            <div className="relative animate-stagger-2">
               <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
+                <span className="w-full border-t border-border/50" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">หรือ</span>
+                <span className="bg-card/80 backdrop-blur-sm px-3 py-1 rounded-full text-muted-foreground">หรือ</span>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4 animate-stagger-3">
               <div className="space-y-2">
-                <Label htmlFor="firstName">ชื่อ</Label>
+                <Label htmlFor="firstName" className="text-sm font-medium">ชื่อ</Label>
                 <Input
                   id="firstName"
                   value={registerData.firstName}
                   onChange={(e) => setRegisterData({ ...registerData, firstName: e.target.value })}
+                  className="apple-input"
                   required
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="lastName">นามสกุล</Label>
+                <Label htmlFor="lastName" className="text-sm font-medium">นามสกุล</Label>
                 <Input
                   id="lastName"
                   value={registerData.lastName}
                   onChange={(e) => setRegisterData({ ...registerData, lastName: e.target.value })}
+                  className="apple-input"
                   required
                 />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="register-email">อีเมล</Label>
+            <div className="space-y-2 animate-stagger-4">
+              <Label htmlFor="register-email" className="text-sm font-medium">อีเมล</Label>
               <Input
                 id="register-email"
                 type="email"
                 placeholder="example@spumail.net"
                 value={registerData.email}
                 onChange={(e) => setRegisterData({ ...registerData, email: e.target.value })}
+                className="apple-input"
                 required
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground/80 animate-fade-in">
                 ระบบนี้เปิดให้ลงทะเบียนเฉพาะนักศึกษา (@spumail.net) เท่านั้น<br />
                 อาจารย์และ Staff กรุณาติดต่อ Super Admin เพื่อสร้างบัญชี
               </p>
             </div>
             {registerData.email.endsWith("@spumail.net") && (
-              <>
+              <div className="space-y-4 animate-fade-in-up">
                 <div className="space-y-2">
-                  <Label htmlFor="studentId">รหัสนักศึกษา</Label>
+                  <Label htmlFor="studentId" className="text-sm font-medium">รหัสนักศึกษา</Label>
                   <Input
                     id="studentId"
                     value={registerData.studentId}
                     onChange={(e) => setRegisterData({ ...registerData, studentId: e.target.value })}
                     placeholder="รหัสนักศึกษา"
+                    className="apple-input"
                     required
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="groupId">กลุ่มเรียน</Label>
+                  <Label htmlFor="groupId" className="text-sm font-medium">กลุ่มเรียน</Label>
                   <select
                     id="groupId"
-                    className="w-full px-3 py-2 border border-input rounded-md bg-background"
+                    className="w-full px-3 py-2 border border-input rounded-md bg-background apple-input"
                     value={registerData.groupId}
                     onChange={(e) => setRegisterData({ ...registerData, groupId: e.target.value })}
                     required
@@ -334,29 +350,31 @@ export default function Auth() {
                     ))}
                   </select>
                 </div>
-              </>
+              </div>
             )}
-            <div className="space-y-2">
-              <Label htmlFor="register-password">รหัสผ่าน</Label>
+            <div className="space-y-2 animate-stagger-5">
+              <Label htmlFor="register-password" className="text-sm font-medium">รหัสผ่าน</Label>
               <Input
                 id="register-password"
                 type="password"
                 value={registerData.password}
                 onChange={(e) => setRegisterData({ ...registerData, password: e.target.value })}
+                className="apple-input"
                 required
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirm-password">ยืนยันรหัสผ่าน</Label>
+            <div className="space-y-2 animate-stagger-6">
+              <Label htmlFor="confirm-password" className="text-sm font-medium">ยืนยันรหัสผ่าน</Label>
               <Input
                 id="confirm-password"
                 type="password"
                 value={registerData.confirmPassword}
                 onChange={(e) => setRegisterData({ ...registerData, confirmPassword: e.target.value })}
+                className="apple-input"
                 required
               />
             </div>
-            <Button type="submit" className="w-full hover-scale" disabled={isLoading}>
+            <Button type="submit" className="w-full apple-button-primary animate-stagger-7" disabled={isLoading}>
               {isLoading ? "กำลังลงทะเบียน..." : "ลงทะเบียน"}
             </Button>
           </form>

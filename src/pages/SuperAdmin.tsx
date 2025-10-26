@@ -60,7 +60,15 @@ export default function SuperAdmin() {
   const [isAddGroupOpen, setIsAddGroupOpen] = useState(false);
   const [isEditGroupOpen, setIsEditGroupOpen] = useState(false);
   const [isAddLineChannelOpen, setIsAddLineChannelOpen] = useState(false);
+  const [isAddTeacherOpen, setIsAddTeacherOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<any>(null);
+  const [newTeacher, setNewTeacher] = useState({
+    email: "",
+    password: "",
+    firstName: "",
+    lastName: "",
+    groupIds: [] as string[],
+  });
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [groupSearchQuery, setGroupSearchQuery] = useState("");
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -321,6 +329,91 @@ export default function SuperAdmin() {
       yearLevel: group.year_level,
     });
     setIsEditGroupOpen(true);
+  };
+
+  const handleAddTeacher = async () => {
+    if (!newTeacher.email || !newTeacher.password || !newTeacher.firstName || !newTeacher.lastName) {
+      toast({
+        variant: "destructive",
+        title: "กรุณากรอกข้อมูลให้ครบถ้วน",
+      });
+      return;
+    }
+
+    if (!newTeacher.email.endsWith("@spu.ac.th")) {
+      toast({
+        variant: "destructive",
+        title: "อีเมลต้องเป็นโดเมน @spu.ac.th เท่านั้น",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      // Create user account
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: newTeacher.email,
+        password: newTeacher.password,
+        options: {
+          data: {
+            first_name: newTeacher.firstName,
+            last_name: newTeacher.lastName,
+          },
+          emailRedirectTo: `${window.location.origin}/`,
+        },
+      });
+
+      if (authError) throw authError;
+      if (!authData.user) throw new Error("Failed to create user");
+
+      // Update profile with name
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({
+          first_name: newTeacher.firstName,
+          last_name: newTeacher.lastName,
+        })
+        .eq("id", authData.user.id);
+
+      if (profileError) throw profileError;
+
+      // Assign to groups
+      if (newTeacher.groupIds.length > 0) {
+        const assignments = newTeacher.groupIds.map((groupId) => ({
+          teacher_id: authData.user.id,
+          group_id: groupId,
+        }));
+
+        const { error: assignError } = await supabase
+          .from("teacher_assignments")
+          .insert(assignments);
+
+        if (assignError) throw assignError;
+      }
+
+      toast({
+        title: "สร้างบัญชีสำเร็จ",
+        description: `สร้างบัญชีอาจารย์ ${newTeacher.email} เรียบร้อยแล้ว`,
+      });
+
+      setNewTeacher({
+        email: "",
+        password: "",
+        firstName: "",
+        lastName: "",
+        groupIds: [],
+      });
+      setIsAddTeacherOpen(false);
+      if (user) fetchData(user.id);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleAddLineChannel = async () => {
@@ -698,12 +791,18 @@ export default function SuperAdmin() {
           </div>
 
           <Tabs defaultValue="dashboard" className="w-full">
-            <TabsList className="grid w-full grid-cols-4 h-auto p-1">
+            <TabsList className="grid w-full grid-cols-5 h-auto p-1">
               <TabsTrigger
                 value="dashboard"
                 className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
               >
                 Dashboard
+              </TabsTrigger>
+              <TabsTrigger
+                value="teachers"
+                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              >
+                จัดการอาจารย์
               </TabsTrigger>
               <TabsTrigger
                 value="groups"
@@ -727,6 +826,158 @@ export default function SuperAdmin() {
 
             <TabsContent value="dashboard" className="space-y-4 animate-in fade-in duration-300">
               <DashboardStats stats={dashboardStats} />
+            </TabsContent>
+
+            <TabsContent value="teachers" className="space-y-4 animate-in fade-in duration-300">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Shield className="w-5 h-5" />
+                        จัดการบัญชีอาจารย์
+                      </CardTitle>
+                      <CardDescription>สร้างบัญชีและมอบหมายกลุ่มให้อาจารย์</CardDescription>
+                    </div>
+                    <Dialog open={isAddTeacherOpen} onOpenChange={setIsAddTeacherOpen}>
+                      <DialogTrigger asChild>
+                        <Button className="bg-primary hover:bg-primary/90">
+                          <UserPlus className="w-4 h-4 mr-2" />
+                          เพิ่มอาจารย์
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="bg-background border shadow-lg">
+                        <DialogHeader>
+                          <DialogTitle>เพิ่มบัญชีอาจารย์</DialogTitle>
+                          <DialogDescription>สร้างบัญชีใหม่สำหรับอาจารย์</DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="teacher-email">อีเมล (@spu.ac.th) <span className="text-red-500">*</span></Label>
+                            <Input
+                              id="teacher-email"
+                              type="email"
+                              placeholder="teacher@spu.ac.th"
+                              value={newTeacher.email}
+                              onChange={(e) => setNewTeacher({ ...newTeacher, email: e.target.value })}
+                              className="bg-background"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="teacher-password">รหัสผ่าน <span className="text-red-500">*</span></Label>
+                            <Input
+                              id="teacher-password"
+                              type="password"
+                              value={newTeacher.password}
+                              onChange={(e) => setNewTeacher({ ...newTeacher, password: e.target.value })}
+                              className="bg-background"
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="teacher-firstName">ชื่อ <span className="text-red-500">*</span></Label>
+                              <Input
+                                id="teacher-firstName"
+                                value={newTeacher.firstName}
+                                onChange={(e) => setNewTeacher({ ...newTeacher, firstName: e.target.value })}
+                                className="bg-background"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="teacher-lastName">นามสกุล <span className="text-red-500">*</span></Label>
+                              <Input
+                                id="teacher-lastName"
+                                value={newTeacher.lastName}
+                                onChange={(e) => setNewTeacher({ ...newTeacher, lastName: e.target.value })}
+                                className="bg-background"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>กลุ่มที่รับผิดชอบ (เลือกได้หลายกลุ่ม)</Label>
+                            <div className="border rounded-md p-3 space-y-2 max-h-[200px] overflow-y-auto bg-background">
+                              {groups.map((group) => (
+                                <div key={group.id} className="flex items-center space-x-2">
+                                  <input
+                                    type="checkbox"
+                                    id={`group-${group.id}`}
+                                    checked={newTeacher.groupIds.includes(group.id)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setNewTeacher({
+                                          ...newTeacher,
+                                          groupIds: [...newTeacher.groupIds, group.id],
+                                        });
+                                      } else {
+                                        setNewTeacher({
+                                          ...newTeacher,
+                                          groupIds: newTeacher.groupIds.filter((id) => id !== group.id),
+                                        });
+                                      }
+                                    }}
+                                    className="rounded"
+                                  />
+                                  <Label htmlFor={`group-${group.id}`} className="font-normal cursor-pointer">
+                                    {group.name} - {group.major} ปี {group.year_level}
+                                  </Label>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <Button variant="outline" onClick={() => setIsAddTeacherOpen(false)} disabled={isSubmitting}>
+                            ยกเลิก
+                          </Button>
+                          <Button onClick={handleAddTeacher} disabled={isSubmitting}>
+                            {isSubmitting ? (
+                              <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                กำลังสร้าง...
+                              </>
+                            ) : (
+                              "สร้างบัญชี"
+                            )}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>ชื่อ-นามสกุล</TableHead>
+                        <TableHead>อีเมล</TableHead>
+                        <TableHead>กลุ่มที่รับผิดชอบ</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {teachers.map((teacher: any) => {
+                        const teacherGroups = teacherAssignments
+                          .filter((ta: any) => ta.teacher_id === teacher.id)
+                          .map((ta: any) => {
+                            const group = groups.find((g) => g.id === ta.group_id);
+                            return group ? `${group.name} (${group.major})` : "";
+                          })
+                          .filter(Boolean)
+                          .join(", ");
+
+                        return (
+                          <TableRow key={teacher.id}>
+                            <TableCell className="font-medium">
+                              {teacher.first_name} {teacher.last_name}
+                            </TableCell>
+                            <TableCell>{teacher.email}</TableCell>
+                            <TableCell>{teacherGroups || "-"}</TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
             </TabsContent>
 
             <TabsContent value="groups" className="space-y-4 animate-in fade-in duration-300">

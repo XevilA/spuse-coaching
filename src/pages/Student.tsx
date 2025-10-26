@@ -145,11 +145,11 @@ export default function Student() {
   };
 
   const handleUploadSession = async () => {
-    if (!file || !sessionNumber || !user || !selectedTeacher || !selectedGroup) {
+    if (!file || !sessionNumber || !user || !selectedTeacher) {
       toast({
         variant: "destructive",
         title: "กรุณากรอกข้อมูลให้ครบถ้วน",
-        description: "กรุณาเลือกอาจารย์และกลุ่มเรียน",
+        description: "กรุณาเลือกอาจารย์และหมายเลขครั้งที่",
       });
       return;
     }
@@ -165,7 +165,7 @@ export default function Student() {
       const { error: insertError } = await supabase.from("coaching_sessions").insert({
         student_id: user.id,
         teacher_id: selectedTeacher,
-        group_id: selectedGroup,
+        group_id: selectedGroup || null,
         session_number: parseInt(sessionNumber),
         file_url: uploadData.path,
         file_name: file.name,
@@ -220,12 +220,12 @@ export default function Student() {
   const completedSessions = sessions.filter((s) => s.status === "approved").length;
   const progressPercentage = (completedSessions / requiredSessions) * 100;
 
-  // Filter teachers based on selected group
+  // Show all teachers or filtered by group
   const availableTeachers = selectedGroup
     ? teacherAssignments
         .filter((assignment) => assignment.group_id === selectedGroup)
         .map((assignment) => assignment.profiles)
-        .filter((teacher) => teacher) // Remove null values
+        .filter((teacher) => teacher)
     : teachers;
 
   if (isLoading) return (
@@ -303,69 +303,66 @@ export default function Student() {
           <CardHeader>
             <CardTitle className="text-lg sm:text-xl">อัปโหลดใบ Coaching</CardTitle>
             <CardDescription>
-              {selectedGroup 
-                ? "เลือกอาจารย์ที่ปรึกษาและอัปโหลดใบ Coaching" 
-                : "กรุณาเลือกกลุ่มเรียนของคุณก่อน"}
+              เลือกอาจารย์ที่ปรึกษาและอัปโหลดใบ Coaching (กลุ่มเรียนเป็นตัวเลือก)
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {!selectedGroup ? (
-              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-center">
-                <p className="text-yellow-800">กรุณาเลือกกลุ่มเรียนของคุณในส่วนข้อมูลส่วนตัวด้านบนก่อน</p>
-              </div>
-            ) : (
-              <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="teacher">เลือกอาจารย์ที่ปรึกษา</Label>
-                    <Select value={selectedTeacher} onValueChange={setSelectedTeacher} disabled={!selectedGroup}>
-                      <SelectTrigger className="bg-background">
-                        <SelectValue placeholder={selectedGroup ? "เลือกอาจารย์" : "เลือกกลุ่มก่อน"} />
-                      </SelectTrigger>
-                      <SelectContent className="bg-background z-50">
-                        {availableTeachers.length === 0 ? (
-                          <div className="p-2 text-sm text-muted-foreground">ไม่มีอาจารย์ในกลุ่มนี้</div>
-                        ) : (
-                          availableTeachers.map((teacher: any) => (
-                            <SelectItem key={teacher.id} value={teacher.id}>
-                              {teacher.first_name} {teacher.last_name}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                    {selectedGroup && availableTeachers.length === 0 && (
-                      <p className="text-xs text-red-500 mt-1">ยังไม่มีอาจารย์ในกลุ่มนี้ กรุณาติดต่อผู้ดูแลระบบ</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="teacher">เลือกอาจารย์ที่ปรึกษา <span className="text-red-500">*</span></Label>
+                <Select value={selectedTeacher} onValueChange={setSelectedTeacher}>
+                  <SelectTrigger className="bg-background">
+                    <SelectValue placeholder="เลือกอาจารย์" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background z-50">
+                    {availableTeachers.length === 0 ? (
+                      <div className="p-2 text-sm text-muted-foreground">
+                        {selectedGroup ? "ไม่มีอาจารย์ในกลุ่มนี้" : "ไม่มีอาจารย์"}
+                      </div>
+                    ) : (
+                      availableTeachers.map((teacher: any) => (
+                        <SelectItem key={teacher.id} value={teacher.id}>
+                          {teacher.first_name} {teacher.last_name}
+                        </SelectItem>
+                      ))
                     )}
-                  </div>
-                  <div>
-                    <Label htmlFor="sessionNumber">หมายเลขครั้งที่</Label>
-                    <Input
-                      id="sessionNumber"
-                      type="number"
-                      value={sessionNumber}
-                      onChange={(e) => setSessionNumber(e.target.value)}
-                      placeholder="เช่น 1, 2, 3..."
-                      disabled={!selectedGroup}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="file">อัปโหลดไฟล์ PDF</Label>
-                    <Input 
-                      id="file" 
-                      type="file" 
-                      accept=".pdf" 
-                      onChange={(e) => e.target.files && setFile(e.target.files[0])}
-                      disabled={!selectedGroup}
-                    />
-                  </div>
-                </div>
-                <Button onClick={handleUploadSession} disabled={isUploading || !selectedGroup} className="w-full sm:w-auto">
-                  <Upload className="w-4 h-4 mr-2" />
-                  {isUploading ? "กำลังอัปโหลด..." : "อัปโหลด"}
-                </Button>
-              </>
-            )}
+                  </SelectContent>
+                </Select>
+                {selectedGroup && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    แสดงอาจารย์จากกลุ่ม: {groups.find((g) => g.id === selectedGroup)?.name}
+                  </p>
+                )}
+                {!selectedGroup && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    แสดงอาจารย์ทั้งหมด (เลือกกลุ่มเพื่อกรองอาจารย์)
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="sessionNumber">หมายเลขครั้งที่ <span className="text-red-500">*</span></Label>
+                <Input
+                  id="sessionNumber"
+                  type="number"
+                  value={sessionNumber}
+                  onChange={(e) => setSessionNumber(e.target.value)}
+                  placeholder="เช่น 1, 2, 3..."
+                />
+              </div>
+              <div>
+                <Label htmlFor="file">อัปโหลดไฟล์ PDF <span className="text-red-500">*</span></Label>
+                <Input 
+                  id="file" 
+                  type="file" 
+                  accept=".pdf" 
+                  onChange={(e) => e.target.files && setFile(e.target.files[0])}
+                />
+              </div>
+            </div>
+            <Button onClick={handleUploadSession} disabled={isUploading} className="w-full sm:w-auto">
+              <Upload className="w-4 h-4 mr-2" />
+              {isUploading ? "กำลังอัปโหลด..." : "อัปโหลด"}
+            </Button>
           </CardContent>
         </Card>
 

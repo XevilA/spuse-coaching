@@ -22,6 +22,7 @@ import {
   Loader2,
   Eye,
   EyeOff,
+  Edit,
 } from "lucide-react";
 import { exportToPDF, exportToExcel, exportToCSV } from "@/utils/exportUtils";
 import { supabase } from "@/integrations/supabase/client";
@@ -61,10 +62,17 @@ export default function SuperAdmin() {
   const [isEditGroupOpen, setIsEditGroupOpen] = useState(false);
   const [isAddLineChannelOpen, setIsAddLineChannelOpen] = useState(false);
   const [isAddTeacherOpen, setIsAddTeacherOpen] = useState(false);
+  const [isEditTeacherOpen, setIsEditTeacherOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<any>(null);
+  const [editingTeacher, setEditingTeacher] = useState<any>(null);
   const [newTeacher, setNewTeacher] = useState({
     email: "",
     password: "",
+    firstName: "",
+    lastName: "",
+    groupIds: [] as string[],
+  });
+  const [editTeacher, setEditTeacher] = useState({
     firstName: "",
     lastName: "",
     groupIds: [] as string[],
@@ -214,6 +222,20 @@ export default function SuperAdmin() {
         const { error } = await supabase.from("line_notifications").delete().eq("id", itemToDelete.id);
         if (error) throw error;
         toast({ title: "ลบ LINE Channel สำเร็จ" });
+      } else if (itemToDelete.type === "teacher") {
+        // Delete teacher assignments first
+        const { error: assignmentError } = await supabase
+          .from("teacher_assignments")
+          .delete()
+          .eq("teacher_id", itemToDelete.id);
+        
+        if (assignmentError) throw assignmentError;
+
+        // Delete user from auth (this will cascade to profiles and user_roles)
+        const { error: deleteError } = await supabase.auth.admin.deleteUser(itemToDelete.id);
+        
+        if (deleteError) throw deleteError;
+        toast({ title: "ลบอาจารย์สำเร็จ" });
       }
 
       if (user) fetchData(user.id);
@@ -236,6 +258,11 @@ export default function SuperAdmin() {
 
   const handleDeleteLineChannel = (channelId: string, channelName: string) => {
     setItemToDelete({ type: "line_channel", id: channelId, name: channelName });
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteTeacher = (teacherId: string, teacherName: string) => {
+    setItemToDelete({ type: "teacher", id: teacherId, name: teacherName });
     setDeleteConfirmOpen(true);
   };
 
@@ -404,6 +431,86 @@ export default function SuperAdmin() {
         groupIds: [],
       });
       setIsAddTeacherOpen(false);
+      if (user) fetchData(user.id);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const openEditTeacherDialog = (teacher: any) => {
+    setEditingTeacher(teacher);
+    const teacherGroupIds = teacherAssignments
+      .filter((ta: any) => ta.teacher_id === teacher.id)
+      .map((ta: any) => ta.group_id);
+    
+    setEditTeacher({
+      firstName: teacher.first_name,
+      lastName: teacher.last_name,
+      groupIds: teacherGroupIds,
+    });
+    setIsEditTeacherOpen(true);
+  };
+
+  const handleEditTeacherSubmit = async () => {
+    if (!editTeacher.firstName || !editTeacher.lastName) {
+      toast({
+        variant: "destructive",
+        title: "กรุณากรอกข้อมูลให้ครบถ้วน",
+      });
+      return;
+    }
+
+    if (!editingTeacher) return;
+
+    setIsSubmitting(true);
+    try {
+      // Update profile
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({
+          first_name: editTeacher.firstName,
+          last_name: editTeacher.lastName,
+        })
+        .eq("id", editingTeacher.id);
+
+      if (profileError) throw profileError;
+
+      // Delete existing assignments
+      const { error: deleteError } = await supabase
+        .from("teacher_assignments")
+        .delete()
+        .eq("teacher_id", editingTeacher.id);
+
+      if (deleteError) throw deleteError;
+
+      // Insert new assignments
+      if (editTeacher.groupIds.length > 0) {
+        const assignments = editTeacher.groupIds.map((groupId) => ({
+          teacher_id: editingTeacher.id,
+          group_id: groupId,
+        }));
+
+        const { error: assignError } = await supabase
+          .from("teacher_assignments")
+          .insert(assignments);
+
+        if (assignError) throw assignError;
+      }
+
+      toast({
+        title: "แก้ไขสำเร็จ",
+        description: `แก้ไขข้อมูลอาจารย์ ${editTeacher.firstName} ${editTeacher.lastName} แล้ว`,
+      });
+
+      setIsEditTeacherOpen(false);
+      setEditingTeacher(null);
+      setEditTeacher({ firstName: "", lastName: "", groupIds: [] });
       if (user) fetchData(user.id);
     } catch (error: any) {
       toast({
@@ -942,6 +1049,84 @@ export default function SuperAdmin() {
                         </DialogFooter>
                       </DialogContent>
                     </Dialog>
+
+                    {/* Edit Teacher Dialog */}
+                    <Dialog open={isEditTeacherOpen} onOpenChange={setIsEditTeacherOpen}>
+                      <DialogContent className="bg-background border shadow-lg">
+                        <DialogHeader>
+                          <DialogTitle>แก้ไขข้อมูลอาจารย์</DialogTitle>
+                          <DialogDescription>แก้ไขชื่อและกลุ่มที่รับผิดชอบ</DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="edit-teacher-firstName">ชื่อ <span className="text-red-500">*</span></Label>
+                              <Input
+                                id="edit-teacher-firstName"
+                                value={editTeacher.firstName}
+                                onChange={(e) => setEditTeacher({ ...editTeacher, firstName: e.target.value })}
+                                className="bg-background"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="edit-teacher-lastName">นามสกุล <span className="text-red-500">*</span></Label>
+                              <Input
+                                id="edit-teacher-lastName"
+                                value={editTeacher.lastName}
+                                onChange={(e) => setEditTeacher({ ...editTeacher, lastName: e.target.value })}
+                                className="bg-background"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>กลุ่มที่รับผิดชอบ</Label>
+                            <div className="space-y-2 max-h-48 overflow-y-auto border rounded p-3 bg-muted/30">
+                              {groups.map((group) => (
+                                <div key={group.id} className="flex items-center space-x-2">
+                                  <input
+                                    type="checkbox"
+                                    id={`edit-group-${group.id}`}
+                                    checked={editTeacher.groupIds.includes(group.id)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setEditTeacher({
+                                          ...editTeacher,
+                                          groupIds: [...editTeacher.groupIds, group.id],
+                                        });
+                                      } else {
+                                        setEditTeacher({
+                                          ...editTeacher,
+                                          groupIds: editTeacher.groupIds.filter((id) => id !== group.id),
+                                        });
+                                      }
+                                    }}
+                                    className="rounded"
+                                  />
+                                  <Label htmlFor={`edit-group-${group.id}`} className="font-normal cursor-pointer">
+                                    {group.name} - {group.major} ปี {group.year_level}
+                                  </Label>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <Button variant="outline" onClick={() => setIsEditTeacherOpen(false)} disabled={isSubmitting}>
+                            ยกเลิก
+                          </Button>
+                          <Button onClick={handleEditTeacherSubmit} disabled={isSubmitting}>
+                            {isSubmitting ? (
+                              <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                กำลังบันทึก...
+                              </>
+                            ) : (
+                              "บันทึก"
+                            )}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -951,6 +1136,7 @@ export default function SuperAdmin() {
                         <TableHead>ชื่อ-นามสกุล</TableHead>
                         <TableHead>อีเมล</TableHead>
                         <TableHead>กลุ่มที่รับผิดชอบ</TableHead>
+                        <TableHead className="text-right">จัดการ</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -971,6 +1157,40 @@ export default function SuperAdmin() {
                             </TableCell>
                             <TableCell>{teacher.email}</TableCell>
                             <TableCell>{teacherGroups || "-"}</TableCell>
+                            <TableCell>
+                              <div className="flex items-center justify-end gap-2">
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => openEditTeacherDialog(teacher)}
+                                        className="hover:bg-blue-50 hover:text-blue-600"
+                                      >
+                                        <Edit className="w-4 h-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>แก้ไขข้อมูล</TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleDeleteTeacher(teacher.id, `${teacher.first_name} ${teacher.last_name}`)}
+                                        className="hover:bg-red-50 hover:text-red-600"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>ลบอาจารย์</TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              </div>
+                            </TableCell>
                           </TableRow>
                         );
                       })}

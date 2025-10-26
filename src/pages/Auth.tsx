@@ -51,7 +51,7 @@ export default function Auth() {
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
-            hd: 'spumail.net,spu.ac.th,dotmini.in.th'
+            hd: 'spumail.net'
           }
         }
       });

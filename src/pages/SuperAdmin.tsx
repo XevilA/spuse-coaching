@@ -474,20 +474,18 @@ export default function SuperAdmin() {
       const { error: profileError } = await supabase
         .from("profiles")
         .update({
-          first_name: editTeacher.firstName,
-          last_name: editTeacher.lastName,
+          first_name: editTeacher.firstName.trim(),
+          last_name: editTeacher.lastName.trim(),
         })
         .eq("id", editingTeacher.id);
 
       if (profileError) throw profileError;
 
       // Delete existing assignments
-      const { error: deleteError } = await supabase
+      await supabase
         .from("teacher_assignments")
         .delete()
         .eq("teacher_id", editingTeacher.id);
-
-      if (deleteError) throw deleteError;
 
       // Insert new assignments
       if (editTeacher.groupIds.length > 0) {
@@ -505,13 +503,13 @@ export default function SuperAdmin() {
 
       toast({
         title: "แก้ไขสำเร็จ",
-        description: `แก้ไขข้อมูลอาจารย์ ${editTeacher.firstName} ${editTeacher.lastName} แล้ว`,
+        description: `แก้ไขข้อมูลอาจารย์ ${editTeacher.firstName} ${editTeacher.lastName} เรียบร้อยแล้ว`,
       });
 
       setIsEditTeacherOpen(false);
       setEditingTeacher(null);
       setEditTeacher({ firstName: "", lastName: "", groupIds: [] });
-      if (user) fetchData(user.id);
+      await fetchData(user.id);
     } catch (error: any) {
       toast({
         variant: "destructive",

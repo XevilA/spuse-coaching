@@ -69,16 +69,11 @@ export default function Student() {
         supabase.from("profiles").select("*").eq("id", userId).single(),
         supabase.from("coaching_sessions").select("*").eq("student_id", userId).order("created_at", { ascending: false }),
         supabase.from("coaching_settings").select("*").eq("key", "min_sessions").single(),
-        supabase.from("profiles").select(`
-          id, first_name, last_name, 
-          user_roles!inner(role)
-        `).eq("user_roles.role", "teacher"),
+        supabase.from("profiles").select("id, first_name, last_name").in("id", 
+          (await supabase.from("user_roles").select("user_id").eq("role", "teacher")).data?.map(r => r.user_id) || []
+        ),
         supabase.from("student_groups").select("*"),
-        supabase.from("teacher_assignments").select(`
-          teacher_id, 
-          group_id,
-          profiles!teacher_assignments_teacher_id_fkey(id, first_name, last_name)
-        `),
+        supabase.from("teacher_assignments").select("teacher_id, group_id"),
       ]);
 
       if (profileRes.data) {
@@ -222,10 +217,11 @@ export default function Student() {
 
   // Show all teachers or filtered by group
   const availableTeachers = selectedGroup
-    ? teacherAssignments
-        .filter((assignment) => assignment.group_id === selectedGroup)
-        .map((assignment) => assignment.profiles)
-        .filter((teacher) => teacher)
+    ? teachers.filter((teacher) => 
+        teacherAssignments.some(
+          (assignment) => assignment.teacher_id === teacher.id && assignment.group_id === selectedGroup
+        )
+      )
     : teachers;
 
   if (isLoading) return (

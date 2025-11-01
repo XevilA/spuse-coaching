@@ -50,8 +50,7 @@ export default function Auth() {
           redirectTo: `${window.location.origin}/`,
           queryParams: {
             access_type: 'offline',
-            prompt: 'consent',
-            hd: 'spumail.net'
+            prompt: 'select_account',
           }
         }
       });

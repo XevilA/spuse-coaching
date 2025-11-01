@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Upload, FileCheck, Calendar, User, Download } from "lucide-react";
+import { Upload, FileCheck, Download } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -23,9 +23,7 @@ export default function Student() {
   const [isUploading, setIsUploading] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState("");
   const [selectedGroup, setSelectedGroup] = useState("");
-  const [teachers, setTeachers] = useState<any[]>([]);
   const [groups, setGroups] = useState<any[]>([]);
-  const [teacherAssignments, setTeacherAssignments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const navigate = useNavigate();
@@ -43,9 +41,6 @@ export default function Student() {
         if (user?.id) fetchData(user.id);
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => {
-        if (user?.id) fetchData(user.id);
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "teacher_assignments" }, () => {
         if (user?.id) fetchData(user.id);
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "student_groups" }, () => {
@@ -74,52 +69,20 @@ export default function Student() {
 
   const fetchData = async (userId: string) => {
     try {
-      // First, get teacher user IDs
-      const { data: teacherRoles, error: roleError } = await supabase
-        .from("user_roles")
-        .select("user_id")
-        .eq("role", "teacher");
-
-      if (roleError) {
-        console.error("Error fetching teacher roles:", roleError);
-      }
-
-      const teacherIds = teacherRoles?.map(r => r.user_id) || [];
-      console.log("🔍 Teacher IDs found:", teacherIds.length, teacherIds);
-
-      // Then fetch all data
-      const [profileRes, sessionsRes, settingsRes, teachersRes, groupsRes, assignmentsRes] = await Promise.all([
+      const [profileRes, sessionsRes, settingsRes, groupsRes] = await Promise.all([
         supabase.from("profiles").select("*").eq("id", userId).single(),
         supabase.from("coaching_sessions").select("*").eq("student_id", userId).order("created_at", { ascending: false }),
         supabase.from("coaching_settings").select("*").eq("key", "min_sessions").single(),
-        teacherIds.length > 0 
-          ? supabase.from("profiles").select("id, first_name, last_name").in("id", teacherIds)
-          : Promise.resolve({ data: [] }),
         supabase.from("student_groups").select("*").order("name"),
-        supabase.from("teacher_assignments").select("teacher_id, group_id, profiles(first_name, last_name)"),
       ]);
-
-      // Debug logs
-      console.log("👨‍🏫 Teachers data:", teachersRes.data);
-      console.log("👥 Groups data:", groupsRes.data);
-      console.log("📋 Assignments data:", assignmentsRes.data);
 
       if (profileRes.data) {
         setProfile(profileRes.data);
         setSelectedGroup(profileRes.data.group_id || "");
-        console.log("👤 Profile group_id:", profileRes.data.group_id);
       }
       if (sessionsRes.data) setSessions(sessionsRes.data);
       if (settingsRes.data) setRequiredSessions(parseInt(settingsRes.data.value));
-      if (teachersRes.data) {
-        setTeachers(teachersRes.data);
-        console.log("✅ Teachers set:", teachersRes.data.length);
-      }
       if (groupsRes.data) setGroups(groupsRes.data);
-      if (assignmentsRes.data) {
-        setTeacherAssignments(assignmentsRes.data);
-        console.log("✅ Assignments set:", assignmentsRes.data.length);
-      }
     } catch (error: any) {
       console.error("Error fetching data:", error);
       toast({
@@ -159,6 +122,9 @@ export default function Student() {
       setSelectedGroup(groupId);
       setProfile({ ...profile, group_id: groupId });
 
+      // Reset teacher selection when group changes
+      setSelectedTeacher("");
+
       toast({
         title: "บันทึกสำเร็จ",
         description: "บันทึกกลุ่มเรียนของคุณแล้ว",
@@ -173,6 +139,35 @@ export default function Student() {
       setIsSavingProfile(false);
     }
   };
+
+  // ฟังก์ชันดึงชื่ออาจารย์จากชื่อกลุ่ม
+  const extractTeacherName = (groupName: string): string | null => {
+    // Pattern: "กลุ่มเรียนที่ X (อาจารย์ชื่อ)" หรือ "กลุ่ม X (อาจารย์ชื่อ)"
+    const match = groupName.match(/\(อาจารย์(.+?)\)/);
+    if (match && match[1]) {
+      return match[1].trim();
+    }
+    return null;
+  };
+
+  // ฟังก์ชันสร้างรายการอาจารย์จากกลุ่มที่เลือก
+  const getAvailableTeachers = () => {
+    if (!selectedGroup) return [];
+    
+    const selectedGroupData = groups.find(g => g.id === selectedGroup);
+    if (!selectedGroupData) return [];
+
+    const teacherName = extractTeacherName(selectedGroupData.name);
+    if (!teacherName) return [];
+
+    return [{
+      id: teacherName, // ใช้ชื่อเป็น ID
+      name: teacherName,
+      fullName: `อาจารย์${teacherName}`
+    }];
+  };
+
+  const availableTeachers = getAvailableTeachers();
 
   const handleUploadSession = async () => {
     if (!file || !sessionNumber || !user || !selectedTeacher) {
@@ -192,21 +187,23 @@ export default function Student() {
 
       if (uploadError) throw uploadError;
 
+      // เก็บชื่ออาจารย์เป็น text ใน teacher_comment หรือสร้าง field ใหม่
       const { error: insertError } = await supabase.from("coaching_sessions").insert({
         student_id: user.id,
-        teacher_id: selectedTeacher,
+        teacher_id: null, // ไม่มี teacher_id จริง
         group_id: selectedGroup || null,
         session_number: parseInt(sessionNumber),
         file_url: uploadData.path,
         file_name: file.name,
         status: "pending",
+        teacher_comment: `อาจารย์${selectedTeacher}`, // เก็บชื่ออาจารย์ไว้ที่นี่
       });
 
       if (insertError) throw insertError;
 
       toast({
         title: "อัปโหลดสำเร็จ",
-        description: "ส่งใบ Coaching แล้ว (รอการยืนยันจากอาจารย์)",
+        description: `ส่งใบ Coaching ถึงอาจารย์${selectedTeacher} แล้ว (รอการยืนยัน)`,
       });
 
       setFile(null);
@@ -247,39 +244,8 @@ export default function Student() {
     return badges[status as keyof typeof badges] || badges.pending;
   };
 
-  // ฟังก์ชันดึงชื่ออาจารย์ของกลุ่ม
-  const getGroupTeachers = (groupId: string) => {
-    const assignments = teacherAssignments.filter(a => a.group_id === groupId);
-    if (assignments.length === 0) return null;
-    
-    // ดึงชื่ออาจารย์จาก profiles ที่ join มาใน teacherAssignments
-    const teacherNames = assignments.map(a => {
-      if (a.profiles) {
-        return `${a.profiles.first_name} ${a.profiles.last_name}`;
-      }
-      return null;
-    }).filter(Boolean);
-
-    return teacherNames.length > 0 ? teacherNames.join(", ") : null;
-  };
-
   const completedSessions = sessions.filter((s) => s.status === "approved").length;
   const progressPercentage = (completedSessions / requiredSessions) * 100;
-
-  // Show all teachers or filtered by group
-  const availableTeachers = selectedGroup
-    ? teachers.filter((teacher) => 
-        teacherAssignments.some(
-          (assignment) => assignment.teacher_id === teacher.id && assignment.group_id === selectedGroup
-        )
-      )
-    : teachers;
-
-  // Debug log for available teachers
-  console.log("🎯 Selected Group:", selectedGroup);
-  console.log("📊 Available Teachers:", availableTeachers.length, availableTeachers);
-  console.log("📝 All Teachers:", teachers.length);
-  console.log("🔗 Teacher Assignments:", teacherAssignments.length);
 
   if (isLoading) return (
     <DashboardLayout role="student" userName="">
@@ -316,17 +282,11 @@ export default function Student() {
                     <SelectValue placeholder="เลือกกลุ่มเรียนของคุณ" />
                   </SelectTrigger>
                   <SelectContent className="bg-background z-50">
-                    {groups.map((group) => {
-                      const teacherNames = getGroupTeachers(group.id);
-                      return (
-                        <SelectItem key={group.id} value={group.id}>
-                          {group.name}
-                          {teacherNames && ` (อาจารย์${teacherNames})`}
-                          {" - "}
-                          {group.major} ชั้นปีที่ {group.year_level}
-                        </SelectItem>
-                      );
-                    })}
+                    {groups.map((group) => (
+                      <SelectItem key={group.id} value={group.id}>
+                        {group.name} - {group.major} ชั้นปีที่ {group.year_level}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 {isSavingProfile && <span className="text-sm text-muted-foreground">กำลังบันทึก...</span>}
@@ -366,48 +326,30 @@ export default function Student() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Debug Information Card */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs space-y-1">
-              <p className="font-semibold text-blue-900">🔍 ข้อมูล Debug:</p>
-              <p>👨‍🏫 จำนวนอาจารย์ทั้งหมด: {teachers.length} คน</p>
-              <p>📋 จำนวนการมอบหมาย: {teacherAssignments.length} รายการ</p>
-              <p>🎯 กลุ่มที่เลือก: {selectedGroup ? groups.find(g => g.id === selectedGroup)?.name : "ยังไม่ได้เลือก"}</p>
-              <p>✅ อาจารย์ที่สามารถเลือกได้: {availableTeachers.length} คน</p>
-              {selectedGroup && availableTeachers.length === 0 && (
-                <p className="text-red-600 font-semibold">
-                  ⚠️ ไม่พบอาจารย์ในกลุ่มนี้ - กรุณาติดต่อ Admin เพื่อเพิ่มอาจารย์ในกลุ่ม
-                </p>
-              )}
-            </div>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="teacher">เลือกอาจารย์ที่ปรึกษา <span className="text-red-500">*</span></Label>
-                <Select value={selectedTeacher} onValueChange={setSelectedTeacher}>
+                <Label htmlFor="teacher">
+                  อาจารย์ที่ปรึกษา <span className="text-red-500">*</span>
+                </Label>
+                <Select 
+                  value={selectedTeacher} 
+                  onValueChange={setSelectedTeacher}
+                  disabled={!selectedGroup}
+                >
                   <SelectTrigger className="bg-background">
-                    <SelectValue placeholder="เลือกอาจารย์" />
+                    <SelectValue placeholder={selectedGroup ? "เลือกอาจารย์" : "เลือกกลุ่มเรียนก่อน"} />
                   </SelectTrigger>
                   <SelectContent className="bg-background z-50">
                     {availableTeachers.length === 0 ? (
-                      <div className="p-4 text-sm text-center space-y-2">
-                        <p className="text-muted-foreground">
-                          {selectedGroup ? "⚠️ ไม่มีอาจารย์ในกลุ่มนี้" : "⚠️ ไม่มีข้อมูลอาจารย์"}
-                        </p>
-                        {selectedGroup && (
-                          <p className="text-xs text-red-500">
-                            กรุณาติดต่อ Admin เพื่อเพิ่มอาจารย์ในกลุ่มของคุณ
-                          </p>
-                        )}
-                        {!selectedGroup && teachers.length === 0 && (
-                          <p className="text-xs text-red-500">
-                            ระบบยังไม่มีข้อมูลอาจารย์ กรุณาติดต่อ Admin
-                          </p>
-                        )}
+                      <div className="p-4 text-sm text-center text-muted-foreground">
+                        {selectedGroup 
+                          ? "ไม่พบชื่ออาจารย์ในกลุ่มนี้" 
+                          : "กรุณาเลือกกลุ่มเรียนก่อน"}
                       </div>
                     ) : (
-                      availableTeachers.map((teacher: any) => (
+                      availableTeachers.map((teacher) => (
                         <SelectItem key={teacher.id} value={teacher.id}>
-                          อาจารย์{teacher.first_name} {teacher.last_name}
+                          {teacher.fullName}
                         </SelectItem>
                       ))
                     )}
@@ -415,12 +357,12 @@ export default function Student() {
                 </Select>
                 {selectedGroup && availableTeachers.length > 0 && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    ✓ แสดงอาจารย์จากกลุ่ม: {groups.find((g) => g.id === selectedGroup)?.name}
+                    ✓ อาจารย์ประจำกลุ่ม: {groups.find((g) => g.id === selectedGroup)?.name}
                   </p>
                 )}
-                {!selectedGroup && teachers.length > 0 && (
+                {selectedGroup && availableTeachers.length === 0 && (
                   <p className="text-xs text-yellow-600 mt-1">
-                    💡 เลือกกลุ่มเรียนเพื่อกรองอาจารย์ (แสดงทั้งหมด {teachers.length} คน)
+                    ⚠️ ชื่อกลุ่มไม่มีข้อมูลอาจารย์ กรุณาติดต่อ Admin
                   </p>
                 )}
               </div>
@@ -432,9 +374,11 @@ export default function Student() {
                   value={sessionNumber}
                   onChange={(e) => setSessionNumber(e.target.value)}
                   placeholder="เช่น 1, 2, 3..."
+                  min="1"
+                  max={requiredSessions}
                 />
               </div>
-              <div>
+              <div className="sm:col-span-2">
                 <Label htmlFor="file">อัปโหลดไฟล์ PDF <span className="text-red-500">*</span></Label>
                 <Input 
                   id="file" 
@@ -442,19 +386,24 @@ export default function Student() {
                   accept=".pdf" 
                   onChange={(e) => e.target.files && setFile(e.target.files[0])}
                 />
+                {file && (
+                  <p className="text-xs text-green-600 mt-1">
+                    ✓ เลือกไฟล์: {file.name}
+                  </p>
+                )}
               </div>
             </div>
             <Button 
               onClick={handleUploadSession} 
-              disabled={isUploading || availableTeachers.length === 0} 
+              disabled={isUploading || !selectedGroup || availableTeachers.length === 0} 
               className="w-full sm:w-auto"
             >
               <Upload className="w-4 h-4 mr-2" />
               {isUploading ? "กำลังอัปโหลด..." : "อัปโหลด"}
             </Button>
-            {availableTeachers.length === 0 && (
-              <p className="text-sm text-red-600">
-                ⚠️ ไม่สามารถอัปโหลดได้ เนื่องจากไม่มีอาจารย์ที่สามารถเลือกได้
+            {!selectedGroup && (
+              <p className="text-sm text-yellow-600">
+                💡 เลือกกลุ่มเรียนก่อนเพื่ออัปโหลดใบ Coaching
               </p>
             )}
           </CardContent>
@@ -465,36 +414,50 @@ export default function Student() {
             <CardTitle className="text-lg sm:text-xl">ประวัติการส่ง</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>ครั้งที่</TableHead>
-                    <TableHead>วันที่ส่ง</TableHead>
-                    <TableHead>สถานะ</TableHead>
-                    <TableHead>ความคิดเห็น</TableHead>
-                    <TableHead>ไฟล์</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sessions.map((session) => (
-                    <TableRow key={session.id}>
-                      <TableCell>#{session.session_number}</TableCell>
-                      <TableCell className="text-sm">{new Date(session.created_at).toLocaleDateString("th-TH")}</TableCell>
-                      <TableCell>{getStatusBadge(session.status)}</TableCell>
-                      <TableCell className="max-w-xs truncate text-sm">
-                        {session.teacher_comment || "-"}
-                      </TableCell>
-                      <TableCell>
-                        <Button variant="outline" size="sm" onClick={() => viewFile(session.file_url)}>
-                          <Download className="w-4 h-4" />
-                        </Button>
-                      </TableCell>
+            {sessions.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>ยังไม่มีประวัติการส่งใบ Coaching</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>ครั้งที่</TableHead>
+                      <TableHead>วันที่ส่ง</TableHead>
+                      <TableHead>อาจารย์</TableHead>
+                      <TableHead>สถานะ</TableHead>
+                      <TableHead>ความคิดเห็น</TableHead>
+                      <TableHead>ไฟล์</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {sessions.map((session) => (
+                      <TableRow key={session.id}>
+                        <TableCell>#{session.session_number}</TableCell>
+                        <TableCell className="text-sm">
+                          {new Date(session.created_at).toLocaleDateString("th-TH")}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {session.teacher_comment?.includes("อาจารย์") 
+                            ? session.teacher_comment.split("\n")[0] 
+                            : "-"}
+                        </TableCell>
+                        <TableCell>{getStatusBadge(session.status)}</TableCell>
+                        <TableCell className="max-w-xs truncate text-sm">
+                          {session.teacher_comment?.split("\n").slice(1).join(" ") || "-"}
+                        </TableCell>
+                        <TableCell>
+                          <Button variant="outline" size="sm" onClick={() => viewFile(session.file_url)}>
+                            <Download className="w-4 h-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

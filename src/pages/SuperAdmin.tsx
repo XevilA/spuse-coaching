@@ -118,7 +118,7 @@ export default function SuperAdmin() {
     if (!user) return;
     
     const channel = supabase
-      .channel("superadmin-changes")
+      .channel("superadmin-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => {
         if (user?.id) fetchData(user.id);
       })
@@ -134,24 +134,11 @@ export default function SuperAdmin() {
       .on("postgres_changes", { event: "*", schema: "public", table: "group_members" }, () => {
         if (user?.id) fetchData(user.id);
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "coaching_sessions" }, () => {
+        if (user?.id) fetchData(user.id);
+      })
       .subscribe();
     
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) return;
-
-    const channel = supabase
-      .channel("admin-changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => fetchData(user.id))
-      .on("postgres_changes", { event: "*", schema: "public", table: "coaching_sessions" }, () => fetchData(user.id))
-      .on("postgres_changes", { event: "*", schema: "public", table: "teacher_assignments" }, () => fetchData(user.id))
-      .on("postgres_changes", { event: "*", schema: "public", table: "group_members" }, () => fetchData(user.id))
-      .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
     };

@@ -75,12 +75,17 @@ export default function Student() {
   const fetchData = async (userId: string) => {
     try {
       // First, get teacher user IDs
-      const { data: teacherRoles } = await supabase
+      const { data: teacherRoles, error: roleError } = await supabase
         .from("user_roles")
         .select("user_id")
         .eq("role", "teacher");
 
+      if (roleError) {
+        console.error("Error fetching teacher roles:", roleError);
+      }
+
       const teacherIds = teacherRoles?.map(r => r.user_id) || [];
+      console.log("🔍 Teacher IDs found:", teacherIds.length, teacherIds);
 
       // Then fetch all data
       const [profileRes, sessionsRes, settingsRes, teachersRes, groupsRes, assignmentsRes] = await Promise.all([
@@ -91,18 +96,30 @@ export default function Student() {
           ? supabase.from("profiles").select("id, first_name, last_name").in("id", teacherIds)
           : Promise.resolve({ data: [] }),
         supabase.from("student_groups").select("*").order("name"),
-        supabase.from("teacher_assignments").select("teacher_id, group_id, profiles!inner(first_name, last_name)"),
+        supabase.from("teacher_assignments").select("teacher_id, group_id, profiles(first_name, last_name)"),
       ]);
+
+      // Debug logs
+      console.log("👨‍🏫 Teachers data:", teachersRes.data);
+      console.log("👥 Groups data:", groupsRes.data);
+      console.log("📋 Assignments data:", assignmentsRes.data);
 
       if (profileRes.data) {
         setProfile(profileRes.data);
         setSelectedGroup(profileRes.data.group_id || "");
+        console.log("👤 Profile group_id:", profileRes.data.group_id);
       }
       if (sessionsRes.data) setSessions(sessionsRes.data);
       if (settingsRes.data) setRequiredSessions(parseInt(settingsRes.data.value));
-      if (teachersRes.data) setTeachers(teachersRes.data);
+      if (teachersRes.data) {
+        setTeachers(teachersRes.data);
+        console.log("✅ Teachers set:", teachersRes.data.length);
+      }
       if (groupsRes.data) setGroups(groupsRes.data);
-      if (assignmentsRes.data) setTeacherAssignments(assignmentsRes.data);
+      if (assignmentsRes.data) {
+        setTeacherAssignments(assignmentsRes.data);
+        console.log("✅ Assignments set:", assignmentsRes.data.length);
+      }
     } catch (error: any) {
       console.error("Error fetching data:", error);
       toast({
@@ -258,6 +275,12 @@ export default function Student() {
       )
     : teachers;
 
+  // Debug log for available teachers
+  console.log("🎯 Selected Group:", selectedGroup);
+  console.log("📊 Available Teachers:", availableTeachers.length, availableTeachers);
+  console.log("📝 All Teachers:", teachers.length);
+  console.log("🔗 Teacher Assignments:", teacherAssignments.length);
+
   if (isLoading) return (
     <DashboardLayout role="student" userName="">
       <div className="flex items-center justify-center h-screen">
@@ -339,10 +362,24 @@ export default function Student() {
           <CardHeader>
             <CardTitle className="text-lg sm:text-xl">อัปโหลดใบ Coaching</CardTitle>
             <CardDescription>
-              เลือกอาจารย์ที่ปรึกษาและอัปโหลดใบ Coaching (กลุ่มเรียนเป็นตัวเลือก)
+              เลือกอาจารย์ที่ปรึกษาและอัปโหลดใบ Coaching
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Debug Information Card */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs space-y-1">
+              <p className="font-semibold text-blue-900">🔍 ข้อมูล Debug:</p>
+              <p>👨‍🏫 จำนวนอาจารย์ทั้งหมด: {teachers.length} คน</p>
+              <p>📋 จำนวนการมอบหมาย: {teacherAssignments.length} รายการ</p>
+              <p>🎯 กลุ่มที่เลือก: {selectedGroup ? groups.find(g => g.id === selectedGroup)?.name : "ยังไม่ได้เลือก"}</p>
+              <p>✅ อาจารย์ที่สามารถเลือกได้: {availableTeachers.length} คน</p>
+              {selectedGroup && availableTeachers.length === 0 && (
+                <p className="text-red-600 font-semibold">
+                  ⚠️ ไม่พบอาจารย์ในกลุ่มนี้ - กรุณาติดต่อ Admin เพื่อเพิ่มอาจารย์ในกลุ่ม
+                </p>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="teacher">เลือกอาจารย์ที่ปรึกษา <span className="text-red-500">*</span></Label>
@@ -352,26 +389,38 @@ export default function Student() {
                   </SelectTrigger>
                   <SelectContent className="bg-background z-50">
                     {availableTeachers.length === 0 ? (
-                      <div className="p-2 text-sm text-muted-foreground">
-                        {selectedGroup ? "ไม่มีอาจารย์ในกลุ่มนี้" : "ไม่มีอาจารย์"}
+                      <div className="p-4 text-sm text-center space-y-2">
+                        <p className="text-muted-foreground">
+                          {selectedGroup ? "⚠️ ไม่มีอาจารย์ในกลุ่มนี้" : "⚠️ ไม่มีข้อมูลอาจารย์"}
+                        </p>
+                        {selectedGroup && (
+                          <p className="text-xs text-red-500">
+                            กรุณาติดต่อ Admin เพื่อเพิ่มอาจารย์ในกลุ่มของคุณ
+                          </p>
+                        )}
+                        {!selectedGroup && teachers.length === 0 && (
+                          <p className="text-xs text-red-500">
+                            ระบบยังไม่มีข้อมูลอาจารย์ กรุณาติดต่อ Admin
+                          </p>
+                        )}
                       </div>
                     ) : (
                       availableTeachers.map((teacher: any) => (
                         <SelectItem key={teacher.id} value={teacher.id}>
-                          {teacher.first_name} {teacher.last_name}
+                          อาจารย์{teacher.first_name} {teacher.last_name}
                         </SelectItem>
                       ))
                     )}
                   </SelectContent>
                 </Select>
-                {selectedGroup && (
+                {selectedGroup && availableTeachers.length > 0 && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    แสดงอาจารย์จากกลุ่ม: {groups.find((g) => g.id === selectedGroup)?.name}
+                    ✓ แสดงอาจารย์จากกลุ่ม: {groups.find((g) => g.id === selectedGroup)?.name}
                   </p>
                 )}
-                {!selectedGroup && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    แสดงอาจารย์ทั้งหมด (เลือกกลุ่มเพื่อกรองอาจารย์)
+                {!selectedGroup && teachers.length > 0 && (
+                  <p className="text-xs text-yellow-600 mt-1">
+                    💡 เลือกกลุ่มเรียนเพื่อกรองอาจารย์ (แสดงทั้งหมด {teachers.length} คน)
                   </p>
                 )}
               </div>
@@ -395,10 +444,19 @@ export default function Student() {
                 />
               </div>
             </div>
-            <Button onClick={handleUploadSession} disabled={isUploading} className="w-full sm:w-auto">
+            <Button 
+              onClick={handleUploadSession} 
+              disabled={isUploading || availableTeachers.length === 0} 
+              className="w-full sm:w-auto"
+            >
               <Upload className="w-4 h-4 mr-2" />
               {isUploading ? "กำลังอัปโหลด..." : "อัปโหลด"}
             </Button>
+            {availableTeachers.length === 0 && (
+              <p className="text-sm text-red-600">
+                ⚠️ ไม่สามารถอัปโหลดได้ เนื่องจากไม่มีอาจารย์ที่สามารถเลือกได้
+              </p>
+            )}
           </CardContent>
         </Card>
 

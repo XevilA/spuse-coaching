@@ -51,9 +51,6 @@ export default function Student() {
       .on("postgres_changes", { event: "*", schema: "public", table: "student_groups" }, () => {
         if (user?.id) fetchData(user.id);
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "user_roles" }, () => {
-        if (user?.id) fetchData(user.id);
-      })
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
@@ -77,93 +74,35 @@ export default function Student() {
 
   const fetchData = async (userId: string) => {
     try {
-      setIsLoading(true);
-
-      // Fetch user profile
-      const { data: profileData, error: profileError } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", userId)
-        .single();
-
-      if (profileError) throw profileError;
-
-      // Fetch coaching sessions
-      const { data: sessionsData, error: sessionsError } = await supabase
-        .from("coaching_sessions")
-        .select("*")
-        .eq("student_id", userId)
-        .order("created_at", { ascending: false });
-
-      if (sessionsError) throw sessionsError;
-
-      // Fetch settings
-      const { data: settingsData, error: settingsError } = await supabase
-        .from("coaching_settings")
-        .select("*")
-        .eq("key", "min_sessions")
-        .single();
-
-      if (settingsError && settingsError.code !== "PGRST116") {
-        console.error("Settings error:", settingsError);
-      }
-
-      // Fetch all student groups
-      const { data: groupsData, error: groupsError } = await supabase
-        .from("student_groups")
-        .select("*")
-        .order("name");
-
-      if (groupsError) throw groupsError;
-
-      // Fetch teacher assignments
-      const { data: assignmentsData, error: assignmentsError } = await supabase
-        .from("teacher_assignments")
-        .select("teacher_id, group_id");
-
-      if (assignmentsError) throw assignmentsError;
-
-      // Get teacher IDs from user_roles
-      const { data: teacherRoles, error: rolesError } = await supabase
+      // First, get teacher user IDs
+      const { data: teacherRoles } = await supabase
         .from("user_roles")
         .select("user_id")
         .eq("role", "teacher");
 
-      if (rolesError) throw rolesError;
-
       const teacherIds = teacherRoles?.map(r => r.user_id) || [];
 
-      // Fetch teacher profiles
-      let teachersData: any[] = [];
-      if (teacherIds.length > 0) {
-        const { data, error: teachersError } = await supabase
-          .from("profiles")
-          .select("id, first_name, last_name, email")
-          .in("id", teacherIds);
+      // Then fetch all data
+      const [profileRes, sessionsRes, settingsRes, teachersRes, groupsRes, assignmentsRes] = await Promise.all([
+        supabase.from("profiles").select("*").eq("id", userId).single(),
+        supabase.from("coaching_sessions").select("*").eq("student_id", userId).order("created_at", { ascending: false }),
+        supabase.from("coaching_settings").select("*").eq("key", "min_sessions").single(),
+        teacherIds.length > 0 
+          ? supabase.from("profiles").select("id, first_name, last_name").in("id", teacherIds)
+          : Promise.resolve({ data: [] }),
+        supabase.from("student_groups").select("*").order("name"),
+        supabase.from("teacher_assignments").select("teacher_id, group_id, profiles!inner(first_name, last_name)"),
+      ]);
 
-        if (teachersError) {
-          console.error("Teachers error:", teachersError);
-        } else {
-          teachersData = data || [];
-        }
+      if (profileRes.data) {
+        setProfile(profileRes.data);
+        setSelectedGroup(profileRes.data.group_id || "");
       }
-
-      // Update state
-      if (profileData) {
-        setProfile(profileData);
-        setSelectedGroup(profileData.group_id || "");
-      }
-      setSessions(sessionsData || []);
-      setRequiredSessions(settingsData ? parseInt(settingsData.value) : 10);
-      setTeachers(teachersData);
-      setGroups(groupsData || []);
-      setTeacherAssignments(assignmentsData || []);
-
-      console.log("Fetched data:", {
-        teachers: teachersData.length,
-        groups: groupsData?.length || 0,
-        assignments: assignmentsData?.length || 0,
-      });
+      if (sessionsRes.data) setSessions(sessionsRes.data);
+      if (settingsRes.data) setRequiredSessions(parseInt(settingsRes.data.value));
+      if (teachersRes.data) setTeachers(teachersRes.data);
+      if (groupsRes.data) setGroups(groupsRes.data);
+      if (assignmentsRes.data) setTeacherAssignments(assignmentsRes.data);
     } catch (error: any) {
       console.error("Error fetching data:", error);
       toast({
@@ -291,6 +230,22 @@ export default function Student() {
     return badges[status as keyof typeof badges] || badges.pending;
   };
 
+  // ฟังก์ชันดึงชื่ออาจารย์ของกลุ่ม
+  const getGroupTeachers = (groupId: string) => {
+    const assignments = teacherAssignments.filter(a => a.group_id === groupId);
+    if (assignments.length === 0) return null;
+    
+    // ดึงชื่ออาจารย์จาก profiles ที่ join มาใน teacherAssignments
+    const teacherNames = assignments.map(a => {
+      if (a.profiles) {
+        return `${a.profiles.first_name} ${a.profiles.last_name}`;
+      }
+      return null;
+    }).filter(Boolean);
+
+    return teacherNames.length > 0 ? teacherNames.join(", ") : null;
+  };
+
   const completedSessions = sessions.filter((s) => s.status === "approved").length;
   const progressPercentage = (completedSessions / requiredSessions) * 100;
 
@@ -338,11 +293,17 @@ export default function Student() {
                     <SelectValue placeholder="เลือกกลุ่มเรียนของคุณ" />
                   </SelectTrigger>
                   <SelectContent className="bg-background z-50">
-                    {groups.map((group) => (
-                      <SelectItem key={group.id} value={group.id}>
-                        {group.name} - {group.major} ปี {group.year_level}
-                      </SelectItem>
-                    ))}
+                    {groups.map((group) => {
+                      const teacherNames = getGroupTeachers(group.id);
+                      return (
+                        <SelectItem key={group.id} value={group.id}>
+                          {group.name}
+                          {teacherNames && ` (อาจารย์${teacherNames})`}
+                          {" - "}
+                          {group.major} ชั้นปีที่ {group.year_level}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
                 {isSavingProfile && <span className="text-sm text-muted-foreground">กำลังบันทึก...</span>}

@@ -116,6 +116,33 @@ export default function SuperAdmin() {
 
   useEffect(() => {
     if (!user) return;
+    
+    const channel = supabase
+      .channel("superadmin-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => {
+        if (user?.id) fetchData(user.id);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "user_roles" }, () => {
+        if (user?.id) fetchData(user.id);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "student_groups" }, () => {
+        if (user?.id) fetchData(user.id);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "teacher_assignments" }, () => {
+        if (user?.id) fetchData(user.id);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "group_members" }, () => {
+        if (user?.id) fetchData(user.id);
+      })
+      .subscribe();
+    
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
 
     const channel = supabase
       .channel("admin-changes")

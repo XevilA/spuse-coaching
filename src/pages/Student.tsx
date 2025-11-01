@@ -42,6 +42,15 @@ export default function Student() {
       .on("postgres_changes", { event: "*", schema: "public", table: "coaching_sessions" }, () => {
         if (user?.id) fetchData(user.id);
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => {
+        if (user?.id) fetchData(user.id);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "teacher_assignments" }, () => {
+        if (user?.id) fetchData(user.id);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "student_groups" }, () => {
+        if (user?.id) fetchData(user.id);
+      })
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
@@ -65,14 +74,23 @@ export default function Student() {
 
   const fetchData = async (userId: string) => {
     try {
+      // First, get teacher user IDs
+      const { data: teacherRoles } = await supabase
+        .from("user_roles")
+        .select("user_id")
+        .eq("role", "teacher");
+
+      const teacherIds = teacherRoles?.map(r => r.user_id) || [];
+
+      // Then fetch all data
       const [profileRes, sessionsRes, settingsRes, teachersRes, groupsRes, assignmentsRes] = await Promise.all([
         supabase.from("profiles").select("*").eq("id", userId).single(),
         supabase.from("coaching_sessions").select("*").eq("student_id", userId).order("created_at", { ascending: false }),
         supabase.from("coaching_settings").select("*").eq("key", "min_sessions").single(),
-        supabase.from("profiles").select("id, first_name, last_name").in("id", 
-          (await supabase.from("user_roles").select("user_id").eq("role", "teacher")).data?.map(r => r.user_id) || []
-        ),
-        supabase.from("student_groups").select("*"),
+        teacherIds.length > 0 
+          ? supabase.from("profiles").select("id, first_name, last_name").in("id", teacherIds)
+          : Promise.resolve({ data: [] }),
+        supabase.from("student_groups").select("*").order("name"),
         supabase.from("teacher_assignments").select("teacher_id, group_id"),
       ]);
 

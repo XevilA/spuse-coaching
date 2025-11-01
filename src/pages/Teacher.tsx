@@ -83,6 +83,15 @@ const Teacher = () => {
       .on("postgres_changes", { event: "*", schema: "public", table: "event_requests" }, () => {
         if (user?.id) fetchData(user.id);
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => {
+        if (user?.id) fetchData(user.id);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "teacher_assignments" }, () => {
+        if (user?.id) fetchData(user.id);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "student_groups" }, () => {
+        if (user?.id) fetchData(user.id);
+      })
       .subscribe();
 
     return () => {

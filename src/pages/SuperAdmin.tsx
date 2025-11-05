@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Shield, Users, FileCheck, Settings, UserPlus, Trash2, Download, Edit, Lock, Unlock, MessageCircle } from "lucide-react";
+import { Shield, Users, FileCheck, Settings, UserPlus, Trash2, Download, Edit, Lock, Unlock, MessageCircle, Upload, UserCog } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
@@ -18,6 +18,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Switch } from "@/components/ui/switch";
 import { LINENotificationSender } from "@/components/LINENotificationSender";
+import * as XLSX from "xlsx";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export default function SuperAdmin() {
   const [user, setUser] = useState<any>(null);
@@ -40,6 +42,10 @@ export default function SuperAdmin() {
   const [isEditTeacherOpen, setIsEditTeacherOpen] = useState(false);
   const [isAssignLineChannelOpen, setIsAssignLineChannelOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [isAddStudentOpen, setIsAddStudentOpen] = useState(false);
+  const [isEditStudentOpen, setIsEditStudentOpen] = useState(false);
+  const [isImportStudentOpen, setIsImportStudentOpen] = useState(false);
+  const [isManageGroupMembersOpen, setIsManageGroupMembersOpen] = useState(false);
   
   // Form states
   const [editingGroup, setEditingGroup] = useState<any>(null);
@@ -96,6 +102,30 @@ export default function SuperAdmin() {
     teacherId: "",
     lineChannelIds: [] as string[],
   });
+
+  const [newStudent, setNewStudent] = useState({
+    email: "",
+    password: "",
+    firstName: "",
+    lastName: "",
+    studentId: "",
+    yearLevel: "",
+    major: "",
+    groupId: "",
+  });
+
+  const [editStudent, setEditStudent] = useState({
+    firstName: "",
+    lastName: "",
+    studentId: "",
+    yearLevel: "",
+    major: "",
+    groupId: "",
+  });
+
+  const [editingStudent, setEditingStudent] = useState<any>(null);
+  const [selectedGroupForMembers, setSelectedGroupForMembers] = useState<any>(null);
+  const [importFile, setImportFile] = useState<File | null>(null);
 
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -610,6 +640,13 @@ export default function SuperAdmin() {
         const { error: deleteError } = await supabase.auth.admin.deleteUser(itemToDelete.id);
         if (deleteError) throw deleteError;
         toast({ title: "ลบอาจารย์สำเร็จ" });
+      } else if (itemToDelete.type === "student") {
+        const { error: memberError } = await supabase.from("group_members").delete().eq("student_id", itemToDelete.id);
+        if (memberError) throw memberError;
+
+        const { error: deleteError } = await supabase.auth.admin.deleteUser(itemToDelete.id);
+        if (deleteError) throw deleteError;
+        toast({ title: "ลบนักศึกษาสำเร็จ" });
       }
 
       if (user) fetchData(user.id);
@@ -634,6 +671,253 @@ export default function SuperAdmin() {
   const handleDeleteTeacher = (teacherId: string, teacherName: string) => {
     setItemToDelete({ type: "teacher", id: teacherId, name: teacherName });
     setDeleteConfirmOpen(true);
+  };
+
+  // Student Management
+  const handleAddStudent = async () => {
+    if (!newStudent.email || !newStudent.password || !newStudent.firstName || !newStudent.lastName) {
+      toast({ variant: "destructive", title: "กรุณากรอกข้อมูลให้ครบถ้วน" });
+      return;
+    }
+
+    if (!newStudent.email.endsWith("@spumail.net")) {
+      toast({ variant: "destructive", title: "อีเมลต้องเป็นโดเมน @spumail.net เท่านั้น" });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: newStudent.email,
+        password: newStudent.password,
+        options: {
+          data: {
+            first_name: newStudent.firstName,
+            last_name: newStudent.lastName,
+          },
+          emailRedirectTo: `${window.location.origin}/`,
+        },
+      });
+
+      if (authError) throw authError;
+      if (!authData.user) throw new Error("ไม่สามารถสร้างผู้ใช้ได้");
+
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({
+          first_name: newStudent.firstName,
+          last_name: newStudent.lastName,
+          student_id: newStudent.studentId || null,
+          year_level: newStudent.yearLevel || null,
+          major: newStudent.major || null,
+        })
+        .eq("id", authData.user.id);
+
+      if (profileError) throw profileError;
+
+      if (newStudent.groupId) {
+        const { error: memberError } = await supabase.from("group_members").insert({
+          group_id: newStudent.groupId,
+          student_id: authData.user.id,
+          is_leader: false,
+        });
+        if (memberError) throw memberError;
+      }
+
+      toast({ title: "สร้างบัญชีสำเร็จ", description: `สร้างบัญชีนักศึกษา ${newStudent.email} เรียบร้อยแล้ว` });
+      setNewStudent({ email: "", password: "", firstName: "", lastName: "", studentId: "", yearLevel: "", major: "", groupId: "" });
+      setIsAddStudentOpen(false);
+      if (user) fetchData(user.id);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "เกิดข้อผิดพลาด", description: error.message });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const openEditStudentDialog = (student: any) => {
+    setEditingStudent(student);
+    const studentGroup = groupMembers.find((gm: any) => gm.student_id === student.id);
+    setEditStudent({
+      firstName: student.first_name,
+      lastName: student.last_name,
+      studentId: student.student_id || "",
+      yearLevel: student.year_level || "",
+      major: student.major || "",
+      groupId: studentGroup?.group_id || "",
+    });
+    setIsEditStudentOpen(true);
+  };
+
+  const handleEditStudentSubmit = async () => {
+    if (!editStudent.firstName || !editStudent.lastName || !editingStudent) {
+      toast({ variant: "destructive", title: "กรุณากรอกข้อมูลให้ครบถ้วน" });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({
+          first_name: editStudent.firstName.trim(),
+          last_name: editStudent.lastName.trim(),
+          student_id: editStudent.studentId || null,
+          year_level: editStudent.yearLevel || null,
+          major: editStudent.major || null,
+        })
+        .eq("id", editingStudent.id);
+
+      if (profileError) throw profileError;
+
+      // Update group membership
+      await supabase.from("group_members").delete().eq("student_id", editingStudent.id);
+
+      if (editStudent.groupId) {
+        const { error: memberError } = await supabase.from("group_members").insert({
+          group_id: editStudent.groupId,
+          student_id: editingStudent.id,
+          is_leader: false,
+        });
+        if (memberError) throw memberError;
+      }
+
+      toast({ title: "แก้ไขสำเร็จ" });
+      setIsEditStudentOpen(false);
+      setEditingStudent(null);
+      setEditStudent({ firstName: "", lastName: "", studentId: "", yearLevel: "", major: "", groupId: "" });
+      await fetchData(user.id);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "เกิดข้อผิดพลาด", description: error.message });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteStudent = (studentId: string, studentName: string) => {
+    setItemToDelete({ type: "student", id: studentId, name: studentName });
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleImportStudents = async () => {
+    if (!importFile) {
+      toast({ variant: "destructive", title: "กรุณาเลือกไฟล์" });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const data = new Uint8Array(e.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: "array" });
+          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+          const jsonData = XLSX.utils.sheet_to_json(firstSheet) as any[];
+
+          let successCount = 0;
+          let errorCount = 0;
+
+          for (const row of jsonData) {
+            try {
+              const email = row["อีเมล"] || row["email"];
+              const password = row["รหัสผ่าน"] || row["password"] || "changeme123";
+              const firstName = row["ชื่อ"] || row["first_name"];
+              const lastName = row["นามสกุล"] || row["last_name"];
+              const studentId = row["รหัสนักศึกษา"] || row["student_id"];
+              const yearLevel = row["ชั้นปี"] || row["year_level"];
+              const major = row["สาขา"] || row["major"];
+              const groupName = row["กลุ่ม"] || row["group_name"];
+
+              if (!email || !firstName || !lastName) {
+                errorCount++;
+                continue;
+              }
+
+              const { data: authData, error: authError } = await supabase.auth.signUp({
+                email,
+                password,
+                options: {
+                  data: { first_name: firstName, last_name: lastName },
+                  emailRedirectTo: `${window.location.origin}/`,
+                },
+              });
+
+              if (authError) {
+                errorCount++;
+                continue;
+              }
+
+              if (authData.user) {
+                await supabase
+                  .from("profiles")
+                  .update({
+                    first_name: firstName,
+                    last_name: lastName,
+                    student_id: studentId || null,
+                    year_level: yearLevel || null,
+                    major: major || null,
+                  })
+                  .eq("id", authData.user.id);
+
+                if (groupName) {
+                  const group = groups.find((g) => g.name === groupName);
+                  if (group) {
+                    await supabase.from("group_members").insert({
+                      group_id: group.id,
+                      student_id: authData.user.id,
+                      is_leader: false,
+                    });
+                  }
+                }
+              }
+
+              successCount++;
+            } catch (err) {
+              errorCount++;
+            }
+          }
+
+          toast({
+            title: "นำเข้าข้อมูลเสร็จสิ้น",
+            description: `สำเร็จ: ${successCount} คน, ไม่สำเร็จ: ${errorCount} คน`,
+          });
+
+          setIsImportStudentOpen(false);
+          setImportFile(null);
+          if (user) fetchData(user.id);
+        } catch (error: any) {
+          toast({ variant: "destructive", title: "เกิดข้อผิดพลาดในการอ่านไฟล์", description: error.message });
+        } finally {
+          setIsSubmitting(false);
+        }
+      };
+
+      reader.readAsArrayBuffer(importFile);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "เกิดข้อผิดพลาด", description: error.message });
+      setIsSubmitting(false);
+    }
+  };
+
+  const downloadTemplate = () => {
+    const template = [
+      {
+        "อีเมล": "student@spumail.net",
+        "รหัสผ่าน": "changeme123",
+        "ชื่อ": "สมชาย",
+        "นามสกุล": "ใจดี",
+        "รหัสนักศึกษา": "65123456",
+        "ชั้นปี": "3",
+        "สาขา": "วิทยาการคอมพิวเตอร์",
+        "กลุ่ม": "ชื่อกลุ่ม (ถ้ามี)",
+      },
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(template);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template");
+    XLSX.writeFile(wb, "student_import_template.xlsx");
   };
 
   if (isLoading) {
@@ -711,8 +995,9 @@ export default function SuperAdmin() {
         </div>
 
         <Tabs defaultValue="teachers" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="teachers">จัดการอาจารย์</TabsTrigger>
+            <TabsTrigger value="students">จัดการนักศึกษา</TabsTrigger>
             <TabsTrigger value="groups">จัดการกลุ่ม</TabsTrigger>
             <TabsTrigger value="line">LINE Broadcast</TabsTrigger>
             <TabsTrigger value="settings">ตั้งค่า</TabsTrigger>
@@ -904,6 +1189,300 @@ export default function SuperAdmin() {
                 </Table>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Students Tab */}
+          <TabsContent value="students" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>จัดการนักศึกษา</CardTitle>
+                    <CardDescription>เพิ่ม แก้ไข ลบ หรือ import นักศึกษาจาก Excel/CSV</CardDescription>
+                  </div>
+                  <div className="flex gap-2">
+                    <Dialog open={isImportStudentOpen} onOpenChange={setIsImportStudentOpen}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline">
+                          <Upload className="w-4 h-4 mr-2" />
+                          Import Excel/CSV
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>นำเข้านักศึกษาจากไฟล์</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <Alert>
+                            <AlertDescription>
+                              ไฟล์ต้องมีคอลัมน์: อีเมล, รหัสผ่าน (optional), ชื่อ, นามสกุล, รหัสนักศึกษา, ชั้นปี, สาขา, กลุ่ม
+                            </AlertDescription>
+                          </Alert>
+                          <div>
+                            <Label htmlFor="import-file">เลือกไฟล์ Excel หรือ CSV</Label>
+                            <Input
+                              id="import-file"
+                              type="file"
+                              accept=".xlsx,.xls,.csv"
+                              onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                            />
+                          </div>
+                          <Button variant="outline" onClick={downloadTemplate}>
+                            <Download className="w-4 h-4 mr-2" />
+                            ดาวน์โหลด Template
+                          </Button>
+                        </div>
+                        <DialogFooter>
+                          <Button onClick={handleImportStudents} disabled={isSubmitting || !importFile}>
+                            {isSubmitting ? "กำลังนำเข้า..." : "นำเข้าข้อมูล"}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                    <Dialog open={isAddStudentOpen} onOpenChange={setIsAddStudentOpen}>
+                      <DialogTrigger asChild>
+                        <Button>
+                          <UserPlus className="w-4 h-4 mr-2" />
+                          เพิ่มนักศึกษา
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-h-[80vh] overflow-y-auto">
+                        <DialogHeader>
+                          <DialogTitle>เพิ่มนักศึกษาใหม่</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div>
+                            <Label htmlFor="student-email">อีเมล (@spumail.net)</Label>
+                            <Input
+                              id="student-email"
+                              type="email"
+                              value={newStudent.email}
+                              onChange={(e) => setNewStudent({ ...newStudent, email: e.target.value })}
+                              placeholder="example@spumail.net"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="student-password">รหัสผ่าน</Label>
+                            <Input
+                              id="student-password"
+                              type="password"
+                              value={newStudent.password}
+                              onChange={(e) => setNewStudent({ ...newStudent, password: e.target.value })}
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="student-firstname">ชื่อ</Label>
+                            <Input
+                              id="student-firstname"
+                              value={newStudent.firstName}
+                              onChange={(e) => setNewStudent({ ...newStudent, firstName: e.target.value })}
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="student-lastname">นามสกุล</Label>
+                            <Input
+                              id="student-lastname"
+                              value={newStudent.lastName}
+                              onChange={(e) => setNewStudent({ ...newStudent, lastName: e.target.value })}
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="student-id">รหัสนักศึกษา</Label>
+                            <Input
+                              id="student-id"
+                              value={newStudent.studentId}
+                              onChange={(e) => setNewStudent({ ...newStudent, studentId: e.target.value })}
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="student-year">ชั้นปี</Label>
+                            <Input
+                              id="student-year"
+                              value={newStudent.yearLevel}
+                              onChange={(e) => setNewStudent({ ...newStudent, yearLevel: e.target.value })}
+                              placeholder="เช่น 1, 2, 3, 4"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="student-major">สาขาวิชา</Label>
+                            <Input
+                              id="student-major"
+                              value={newStudent.major}
+                              onChange={(e) => setNewStudent({ ...newStudent, major: e.target.value })}
+                            />
+                          </div>
+                          <div>
+                            <Label>กลุ่ม (ถ้ามี)</Label>
+                            <Select
+                              value={newStudent.groupId}
+                              onValueChange={(value) => setNewStudent({ ...newStudent, groupId: value })}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="เลือกกลุ่ม" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="">ไม่มีกลุ่ม</SelectItem>
+                                {groups.map((group) => (
+                                  <SelectItem key={group.id} value={group.id}>
+                                    {group.name} - {group.major} ปี {group.year_level}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <Button onClick={handleAddStudent} disabled={isSubmitting}>
+                            {isSubmitting ? "กำลังเพิ่ม..." : "เพิ่มนักศึกษา"}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>ชื่อ-นามสกุล</TableHead>
+                      <TableHead>อีเมล</TableHead>
+                      <TableHead>รหัสนักศึกษา</TableHead>
+                      <TableHead>ชั้นปี</TableHead>
+                      <TableHead>สาขา</TableHead>
+                      <TableHead>กลุ่ม</TableHead>
+                      <TableHead>จัดการ</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {students.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center text-muted-foreground">
+                          ไม่มีนักศึกษาในระบบ
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      students.map((student) => {
+                        const studentGroup = groupMembers.find((gm: any) => gm.student_id === student.id);
+                        const group = groups.find((g) => g.id === studentGroup?.group_id);
+                        return (
+                          <TableRow key={student.id}>
+                            <TableCell className="font-medium">
+                              {student.first_name} {student.last_name}
+                            </TableCell>
+                            <TableCell>{student.email}</TableCell>
+                            <TableCell>{student.student_id || "-"}</TableCell>
+                            <TableCell>{student.year_level || "-"}</TableCell>
+                            <TableCell>{student.major || "-"}</TableCell>
+                            <TableCell>
+                              {group ? (
+                                <Badge variant="outline">{group.name}</Badge>
+                              ) : (
+                                <span className="text-muted-foreground">ไม่มีกลุ่ม</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => openEditStudentDialog(student)}
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => handleDeleteStudent(student.id, `${student.first_name} ${student.last_name}`)}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+
+            {/* Edit Student Dialog */}
+            <Dialog open={isEditStudentOpen} onOpenChange={setIsEditStudentOpen}>
+              <DialogContent className="max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>แก้ไขข้อมูลนักศึกษา</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="edit-student-firstname">ชื่อ</Label>
+                    <Input
+                      id="edit-student-firstname"
+                      value={editStudent.firstName}
+                      onChange={(e) => setEditStudent({ ...editStudent, firstName: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-student-lastname">นามสกุล</Label>
+                    <Input
+                      id="edit-student-lastname"
+                      value={editStudent.lastName}
+                      onChange={(e) => setEditStudent({ ...editStudent, lastName: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-student-id">รหัสนักศึกษา</Label>
+                    <Input
+                      id="edit-student-id"
+                      value={editStudent.studentId}
+                      onChange={(e) => setEditStudent({ ...editStudent, studentId: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-student-year">ชั้นปี</Label>
+                    <Input
+                      id="edit-student-year"
+                      value={editStudent.yearLevel}
+                      onChange={(e) => setEditStudent({ ...editStudent, yearLevel: e.target.value })}
+                      placeholder="เช่น 1, 2, 3, 4"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-student-major">สาขาวิชา</Label>
+                    <Input
+                      id="edit-student-major"
+                      value={editStudent.major}
+                      onChange={(e) => setEditStudent({ ...editStudent, major: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label>กลุ่ม</Label>
+                    <Select
+                      value={editStudent.groupId}
+                      onValueChange={(value) => setEditStudent({ ...editStudent, groupId: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="เลือกกลุ่ม" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">ไม่มีกลุ่ม</SelectItem>
+                        {groups.map((group) => (
+                          <SelectItem key={group.id} value={group.id}>
+                            {group.name} - {group.major} ปี {group.year_level}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button onClick={handleEditStudentSubmit} disabled={isSubmitting}>
+                    {isSubmitting ? "กำลังบันทึก..." : "บันทึกการแก้ไข"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </TabsContent>
 
           {/* Groups Tab */}

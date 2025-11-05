@@ -54,7 +54,7 @@ export const DashboardLayout = ({ children, role, userName }: DashboardLayoutPro
               </div>
               <div>
                 <h1 className="text-xl font-bold text-white">ระบบติดตามใบ Coaching</h1>
-                <p className="text-sm text-white/80">มหาวิทยาลัยศรีปทุม</p>
+                <p className="text-sm text-white/80">คณะการสร้างเจ้าของธุรกิจ x SPU AI CLUB</p>
               </div>
             </div>
             

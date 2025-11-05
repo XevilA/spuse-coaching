@@ -143,18 +143,40 @@ const Teacher = () => {
 
   const fetchData = async (teacherId: string) => {
     try {
-      const [sessionsRes, leaveRes, roomRes, eventRes, assignmentsRes, allSessionsRes, groupsRes] = await Promise.all([
-        supabase
-          .from("coaching_sessions")
-          .select(
-            `
-            *,
-            student:profiles!coaching_sessions_student_id_fkey(first_name, last_name, student_id, group_id)
-          `,
-          )
-          .eq("status", "pending")
-          .order("created_at", { ascending: false }),
+      // First fetch teacher assignments to get group IDs
+      const { data: assignmentsData } = await supabase
+        .from("teacher_assignments")
+        .select(
+          `
+          *,
+          student_groups(name, required_sessions)
+        `,
+        )
+        .eq("teacher_id", teacherId);
 
+      const assignedGroupIds = assignmentsData?.map((a) => a.group_id) || [];
+
+      // Fetch all sessions first
+      const { data: allSessionsData } = await supabase
+        .from("coaching_sessions")
+        .select(
+          `
+          *,
+          student:profiles!coaching_sessions_student_id_fkey(first_name, last_name, student_id, group_id)
+        `,
+        )
+        .order("created_at", { ascending: false });
+
+      // Filter sessions to only show those from assigned groups
+      const teacherSessions = (allSessionsData || []).filter((s: any) => 
+        assignedGroupIds.includes(s.student?.group_id)
+      );
+
+      // Get pending sessions from teacher's groups only
+      const pendingTeacherSessions = teacherSessions.filter((s: any) => s.status === "pending");
+
+      // Fetch other data
+      const [leaveRes, roomRes, eventRes, groupsRes] = await Promise.all([
         supabase
           .from("leave_requests")
           .select(
@@ -187,51 +209,28 @@ const Teacher = () => {
           )
           .eq("status", "pending")
           .order("created_at", { ascending: false }),
-
-        supabase
-          .from("teacher_assignments")
-          .select(
-            `
-            *,
-            student_groups(name, required_sessions)
-          `,
-          )
-          .eq("teacher_id", teacherId),
-
-        supabase
-          .from("coaching_sessions")
-          .select(
-            `
-            *,
-            student:profiles!coaching_sessions_student_id_fkey(first_name, last_name, student_id, group_id)
-          `,
-          )
-          .order("created_at", { ascending: false }),
         
         supabase.from("student_groups").select("*").order("name"),
       ]);
 
-      setSessions(sessionsRes.data || []);
+      // Set only pending sessions from teacher's groups
+      setSessions(pendingTeacherSessions);
       setLeaveRequests(leaveRes.data || []);
       setRoomBookings(roomRes.data || []);
       setEventRequests(eventRes.data || []);
       setGroups(groupsRes.data || []);
-      setAllSessions(allSessionsRes.data || []);
+      setAllSessions(teacherSessions); // All sessions from teacher's groups
+      setTeacherAssignments(assignmentsData || []);
 
-      if (assignmentsRes.data) {
-        setTeacherAssignments(assignmentsRes.data);
-        const groupIds = assignmentsRes.data.map((a) => a.group_id);
-        const teacherSessions = (allSessionsRes.data || []).filter((s: any) => groupIds.includes(s.student?.group_id));
-
-        setProfile((prev: any) => ({
-          ...prev,
-          teacherAssignments: assignmentsRes.data,
-          totalGroups: assignmentsRes.data.length,
-          totalSessions: teacherSessions.length,
-          approvedSessions: teacherSessions.filter((s: any) => s.status === "approved").length,
-          pendingSessions: teacherSessions.filter((s: any) => s.status === "pending").length,
-        }));
-      }
+      // Calculate stats from teacher's sessions only
+      setProfile((prev: any) => ({
+        ...prev,
+        teacherAssignments: assignmentsData,
+        totalGroups: assignedGroupIds.length,
+        totalSessions: teacherSessions.length,
+        approvedSessions: teacherSessions.filter((s: any) => s.status === "approved").length,
+        pendingSessions: pendingTeacherSessions.length,
+      }));
     } catch (error: any) {
       console.error("Error fetching data:", error);
       toast({

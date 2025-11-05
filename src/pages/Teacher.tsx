@@ -358,6 +358,25 @@ const Teacher = () => {
 
     setIsSavingProfile(true);
     try {
+      // ลบ assignment เก่าออกก่อน (ถ้ามี)
+      const { error: deleteError } = await supabase
+        .from("teacher_assignments")
+        .delete()
+        .eq("teacher_id", user.id);
+
+      if (deleteError) throw deleteError;
+
+      // เพิ่ม assignment ใหม่
+      const { error: insertError } = await supabase
+        .from("teacher_assignments")
+        .insert({
+          teacher_id: user.id,
+          group_id: profile.group_id,
+        });
+
+      if (insertError) throw insertError;
+
+      // อัปเดต profile ด้วย
       const { error: profileError } = await supabase
         .from("profiles")
         .update({ group_id: profile.group_id })
@@ -367,8 +386,11 @@ const Teacher = () => {
 
       toast({
         title: "บันทึกสำเร็จ",
-        description: "บันทึกกลุ่มของคุณแล้ว",
+        description: "บันทึกกลุ่ม Coaching ของคุณแล้ว",
       });
+
+      // Refresh data
+      fetchData(user.id);
     } catch (error: any) {
       toast({
         variant: "destructive",

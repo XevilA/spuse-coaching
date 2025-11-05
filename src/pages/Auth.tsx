@@ -94,7 +94,7 @@ export default function Auth() {
           .single();
 
         if (profileError || !profileData) {
-          throw new Error("ไม่พบรหัสนักศึกษา/รหัสพนักงานในระบบ");
+          throw new Error("ไม่พบรหัสนักศึกษา/รหัสพนักงานในระบบ กรุณาใช้อีเมลในการเข้าสู่ระบบแทน");
         }
 
         email = profileData.email;

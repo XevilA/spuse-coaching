@@ -28,6 +28,7 @@ export default function SuperAdmin() {
   const [sessions, setSessions] = useState<any[]>([]);
   const [teacherAssignments, setTeacherAssignments] = useState<any[]>([]);
   const [groupMembers, setGroupMembers] = useState<any[]>([]);
+  const [lineChannelAssignments, setLineChannelAssignments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
   // Dialog states
@@ -37,6 +38,7 @@ export default function SuperAdmin() {
   const [isEditLineChannelOpen, setIsEditLineChannelOpen] = useState(false);
   const [isAddTeacherOpen, setIsAddTeacherOpen] = useState(false);
   const [isEditTeacherOpen, setIsEditTeacherOpen] = useState(false);
+  const [isAssignLineChannelOpen, setIsAssignLineChannelOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   
   // Form states
@@ -90,6 +92,11 @@ export default function SuperAdmin() {
     notificationType: "broadcast" as "group" | "broadcast",
   });
 
+  const [newLineAssignment, setNewLineAssignment] = useState({
+    teacherId: "",
+    lineChannelIds: [] as string[],
+  });
+
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -123,6 +130,9 @@ export default function SuperAdmin() {
       .on("postgres_changes", { event: "*", schema: "public", table: "line_notifications" }, () => {
         if (user?.id) fetchData(user.id);
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "line_channel_assignments" }, () => {
+        if (user?.id) fetchData(user.id);
+      })
       .subscribe();
     
     return () => {
@@ -150,7 +160,7 @@ export default function SuperAdmin() {
 
   const fetchData = async (userId: string) => {
     try {
-      const [profileRes, usersRes, groupsRes, sessionsRes, lineChannelsRes, assignmentsRes, membersRes] = await Promise.all([
+      const [profileRes, usersRes, groupsRes, sessionsRes, lineChannelsRes, assignmentsRes, membersRes, lineAssignmentsRes] = await Promise.all([
         supabase.from("profiles").select("*").eq("id", userId).single(),
         supabase.from("profiles").select("*, user_roles(role)"),
         supabase.from("student_groups").select("*"),
@@ -158,6 +168,11 @@ export default function SuperAdmin() {
         supabase.from("line_notifications").select("*").order("name"),
         supabase.from("teacher_assignments").select("*, profiles!teacher_assignments_teacher_id_fkey(first_name, last_name), student_groups(name)"),
         supabase.from("group_members").select("*, profiles!group_members_student_id_fkey(first_name, last_name, student_id)"),
+        supabase.from("line_channel_assignments").select(`
+          *,
+          profiles!line_channel_assignments_teacher_id_fkey(first_name, last_name, email),
+          line_notifications!line_channel_assignments_line_notification_id_fkey(name)
+        `),
       ]);
 
       if (profileRes.data) setProfile(profileRes.data);
@@ -167,6 +182,7 @@ export default function SuperAdmin() {
       if (lineChannelsRes.data) setLineChannels(lineChannelsRes.data);
       if (assignmentsRes.data) setTeacherAssignments(assignmentsRes.data);
       if (membersRes.data) setGroupMembers(membersRes.data);
+      if (lineAssignmentsRes.data) setLineChannelAssignments(lineAssignmentsRes.data);
     } catch (error: any) {
       console.error("Error fetching data:", error);
       toast({
@@ -496,6 +512,81 @@ export default function SuperAdmin() {
       if (user) fetchData(user.id);
     } catch (error: any) {
       toast({ variant: "destructive", title: "เกิดข้อผิดพลาด", description: error.message });
+    }
+  };
+
+  // LINE Channel Assignment Management
+  const handleAssignLineChannel = async () => {
+    if (!newLineAssignment.teacherId) {
+      toast({ variant: "destructive", title: "กรุณาเลือกอาจารย์" });
+      return;
+    }
+
+    if (newLineAssignment.lineChannelIds.length === 0) {
+      toast({ variant: "destructive", title: "กรุณาเลือก LINE Channel อย่างน้อย 1 Channel" });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      // Remove existing assignments for this teacher
+      await supabase
+        .from("line_channel_assignments")
+        .delete()
+        .eq("teacher_id", newLineAssignment.teacherId);
+
+      // Insert new assignments
+      const assignments = newLineAssignment.lineChannelIds.map((channelId) => ({
+        teacher_id: newLineAssignment.teacherId,
+        line_notification_id: channelId,
+      }));
+
+      const { error } = await supabase.from("line_channel_assignments").insert(assignments);
+
+      if (error) throw error;
+
+      toast({
+        title: "บันทึกสำเร็จ",
+        description: `มอบหมาย LINE Channel ให้อาจารย์เรียบร้อยแล้ว`,
+      });
+      setIsAssignLineChannelOpen(false);
+      setNewLineAssignment({ teacherId: "", lineChannelIds: [] });
+      if (user) fetchData(user.id);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "ไม่สามารถมอบหมาย LINE Channel ได้",
+        description: error.message,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRemoveAllLineChannels = async (teacherId: string, teacherName: string) => {
+    if (!confirm(`ต้องการลบ LINE Channel ทั้งหมดของ ${teacherName} หรือไม่?`)) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("line_channel_assignments")
+        .delete()
+        .eq("teacher_id", teacherId);
+
+      if (error) throw error;
+
+      toast({
+        title: "ลบสำเร็จ",
+        description: `ลบ LINE Channel ของ ${teacherName} แล้ว`,
+      });
+      if (user) fetchData(user.id);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "ไม่สามารถลบได้",
+        description: error.message,
+      });
     }
   };
 
@@ -1111,6 +1202,176 @@ export default function SuperAdmin() {
                           </TableCell>
                         </TableRow>
                       ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+
+            {/* LINE Channel Assignments */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>มอบหมาย LINE Channel ให้อาจารย์</CardTitle>
+                    <CardDescription>กำหนด Channel ที่อาจารย์แต่ละคนสามารถใช้ส่งข้อความได้</CardDescription>
+                  </div>
+                  <Dialog open={isAssignLineChannelOpen} onOpenChange={setIsAssignLineChannelOpen}>
+                    <DialogTrigger asChild>
+                      <Button>
+                        <UserPlus className="w-4 h-4 mr-2" />
+                        มอบหมาย Channel
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>มอบหมาย LINE Channel ให้อาจารย์</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div>
+                          <Label htmlFor="assign-teacher">เลือกอาจารย์</Label>
+                          <Select
+                            value={newLineAssignment.teacherId}
+                            onValueChange={(value) => setNewLineAssignment({ ...newLineAssignment, teacherId: value })}
+                          >
+                            <SelectTrigger id="assign-teacher">
+                              <SelectValue placeholder="เลือกอาจารย์" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {teachers.map((teacher) => (
+                                <SelectItem key={teacher.id} value={teacher.id}>
+                                  {teacher.first_name} {teacher.last_name} ({teacher.email})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label>เลือก LINE Channel</Label>
+                          <div className="space-y-2 mt-2 max-h-60 overflow-y-auto border rounded-md p-3">
+                            {lineChannels.filter(c => c.enabled).map((channel) => (
+                              <div key={channel.id} className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  id={`channel-${channel.id}`}
+                                  checked={newLineAssignment.lineChannelIds.includes(channel.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setNewLineAssignment({
+                                        ...newLineAssignment,
+                                        lineChannelIds: [...newLineAssignment.lineChannelIds, channel.id],
+                                      });
+                                    } else {
+                                      setNewLineAssignment({
+                                        ...newLineAssignment,
+                                        lineChannelIds: newLineAssignment.lineChannelIds.filter(id => id !== channel.id),
+                                      });
+                                    }
+                                  }}
+                                  className="rounded"
+                                />
+                                <label htmlFor={`channel-${channel.id}`} className="text-sm cursor-pointer flex-1">
+                                  <div className="font-medium">{channel.name}</div>
+                                  {channel.description && (
+                                    <div className="text-xs text-muted-foreground">{channel.description}</div>
+                                  )}
+                                </label>
+                              </div>
+                            ))}
+                          </div>
+                          {newLineAssignment.lineChannelIds.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              {newLineAssignment.lineChannelIds.map(id => {
+                                const channel = lineChannels.find(c => c.id === id);
+                                return channel ? (
+                                  <Badge key={id} variant="secondary">
+                                    {channel.name}
+                                  </Badge>
+                                ) : null;
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button onClick={handleAssignLineChannel} disabled={isSubmitting}>
+                          {isSubmitting ? "กำลังบันทึก..." : "บันทึก"}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>อาจารย์</TableHead>
+                      <TableHead>อีเมล</TableHead>
+                      <TableHead>LINE Channels ที่ได้รับมอบหมาย</TableHead>
+                      <TableHead>จัดการ</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {teachers.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center text-muted-foreground">
+                          ยังไม่มีอาจารย์ในระบบ
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      teachers.map((teacher) => {
+                        const teacherChannels = lineChannelAssignments.filter(
+                          (assignment: any) => assignment.teacher_id === teacher.id
+                        );
+                        return (
+                          <TableRow key={teacher.id}>
+                            <TableCell className="font-medium">
+                              {teacher.first_name} {teacher.last_name}
+                            </TableCell>
+                            <TableCell>{teacher.email}</TableCell>
+                            <TableCell>
+                              {teacherChannels.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {teacherChannels.map((assignment: any) => (
+                                    <Badge key={assignment.id} variant="outline">
+                                      {assignment.line_notifications?.name}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground text-sm">ยังไม่มี Channel</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setNewLineAssignment({
+                                      teacherId: teacher.id,
+                                      lineChannelIds: teacherChannels.map((a: any) => a.line_notification_id),
+                                    });
+                                    setIsAssignLineChannelOpen(true);
+                                  }}
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </Button>
+                                {teacherChannels.length > 0 && (
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => handleRemoveAllLineChannels(teacher.id, `${teacher.first_name} ${teacher.last_name}`)}
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>

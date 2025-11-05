@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,46 +6,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import {
-  Shield,
-  Users,
-  FileCheck,
-  Settings,
-  UserPlus,
-  Trash2,
-  Download,
-  Search,
-  Filter,
-  AlertCircle,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  Eye,
-  EyeOff,
-  Edit,
-} from "lucide-react";
-import { exportToPDF, exportToExcel, exportToCSV } from "@/utils/exportUtils";
+import { Shield, Users, FileCheck, Settings, UserPlus, Trash2, Download, Edit, Lock, Unlock, MessageCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AppointmentCalendar } from "@/components/AppointmentCalendar";
 import { Textarea } from "@/components/ui/textarea";
-
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+import { Switch } from "@/components/ui/switch";
+import { LINENotificationSender } from "@/components/LINENotificationSender";
 
 export default function SuperAdmin() {
   const [user, setUser] = useState<any>(null);
@@ -56,15 +28,24 @@ export default function SuperAdmin() {
   const [sessions, setSessions] = useState<any[]>([]);
   const [teacherAssignments, setTeacherAssignments] = useState<any[]>([]);
   const [groupMembers, setGroupMembers] = useState<any[]>([]);
-  const [minSessions, setMinSessions] = useState("10");
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Dialog states
   const [isAddGroupOpen, setIsAddGroupOpen] = useState(false);
   const [isEditGroupOpen, setIsEditGroupOpen] = useState(false);
   const [isAddLineChannelOpen, setIsAddLineChannelOpen] = useState(false);
+  const [isEditLineChannelOpen, setIsEditLineChannelOpen] = useState(false);
   const [isAddTeacherOpen, setIsAddTeacherOpen] = useState(false);
   const [isEditTeacherOpen, setIsEditTeacherOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  
+  // Form states
   const [editingGroup, setEditingGroup] = useState<any>(null);
   const [editingTeacher, setEditingTeacher] = useState<any>(null);
+  const [editingLineChannel, setEditingLineChannel] = useState<any>(null);
+  const [itemToDelete, setItemToDelete] = useState<{ type: string; id: string; name: string } | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const [newTeacher, setNewTeacher] = useState({
     email: "",
     password: "",
@@ -72,41 +53,43 @@ export default function SuperAdmin() {
     lastName: "",
     groupIds: [] as string[],
   });
+
   const [editTeacher, setEditTeacher] = useState({
     firstName: "",
     lastName: "",
     groupIds: [] as string[],
   });
-  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
-  const [groupSearchQuery, setGroupSearchQuery] = useState("");
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [itemToDelete, setItemToDelete] = useState<{ type: string; id: string; name: string } | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // NEW: Track assignment operations
-  const [isAssigningTeacher, setIsAssigningTeacher] = useState(false);
-  const [isAddingStudent, setIsAddingStudent] = useState(false);
-  const [selectedTeacher, setSelectedTeacher] = useState("");
-  const [selectedStudent, setSelectedStudent] = useState("");
 
   const [newGroup, setNewGroup] = useState({
     name: "",
     major: "",
     yearLevel: "",
   });
+
   const [editGroup, setEditGroup] = useState({
     name: "",
     major: "",
     yearLevel: "",
   });
+
   const [newLineChannel, setNewLineChannel] = useState({
     name: "",
     description: "",
     channelAccessToken: "",
     channelSecret: "",
     groupId: "",
-    notificationType: "",
+    notificationType: "broadcast" as "group" | "broadcast",
   });
+
+  const [editLineChannel, setEditLineChannel] = useState({
+    name: "",
+    description: "",
+    channelAccessToken: "",
+    channelSecret: "",
+    groupId: "",
+    notificationType: "broadcast" as "group" | "broadcast",
+  });
+
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -118,7 +101,7 @@ export default function SuperAdmin() {
     if (!user) return;
     
     const channel = supabase
-      .channel("superadmin-realtime-all")
+      .channel("superadmin-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => {
         if (user?.id) fetchData(user.id);
       })
@@ -137,18 +120,6 @@ export default function SuperAdmin() {
       .on("postgres_changes", { event: "*", schema: "public", table: "coaching_sessions" }, () => {
         if (user?.id) fetchData(user.id);
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "appointments" }, () => {
-        if (user?.id) fetchData(user.id);
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "leave_requests" }, () => {
-        if (user?.id) fetchData(user.id);
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "room_bookings" }, () => {
-        if (user?.id) fetchData(user.id);
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "event_requests" }, () => {
-        if (user?.id) fetchData(user.id);
-      })
       .on("postgres_changes", { event: "*", schema: "public", table: "line_notifications" }, () => {
         if (user?.id) fetchData(user.id);
       })
@@ -160,9 +131,7 @@ export default function SuperAdmin() {
   }, [user]);
 
   const checkAuth = async () => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+    const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
       navigate("/auth");
       return;
@@ -181,27 +150,20 @@ export default function SuperAdmin() {
 
   const fetchData = async (userId: string) => {
     try {
-      const [profileRes, usersRes, groupsRes, sessionsRes, settingsRes, lineChannelsRes, assignmentsRes, membersRes] =
-        await Promise.all([
-          supabase.from("profiles").select("*").eq("id", userId).single(),
-          supabase.from("profiles").select(`*, user_roles (role)`),
-          supabase.from("student_groups").select("*"),
-          supabase.from("coaching_sessions").select("*, profiles!coaching_sessions_student_id_fkey(group_id)"),
-          supabase.from("coaching_settings").select("*").eq("key", "min_sessions").single(),
-          supabase.from("line_notifications").select("*"),
-          supabase
-            .from("teacher_assignments")
-            .select("*, profiles!teacher_assignments_teacher_id_fkey(first_name, last_name), student_groups(name)"),
-          supabase
-            .from("group_members")
-            .select("*, profiles!group_members_student_id_fkey(first_name, last_name, student_id)"),
-        ]);
+      const [profileRes, usersRes, groupsRes, sessionsRes, lineChannelsRes, assignmentsRes, membersRes] = await Promise.all([
+        supabase.from("profiles").select("*").eq("id", userId).single(),
+        supabase.from("profiles").select("*, user_roles(role)"),
+        supabase.from("student_groups").select("*"),
+        supabase.from("coaching_sessions").select("*, profiles!coaching_sessions_student_id_fkey(group_id)"),
+        supabase.from("line_notifications").select("*").order("name"),
+        supabase.from("teacher_assignments").select("*, profiles!teacher_assignments_teacher_id_fkey(first_name, last_name), student_groups(name)"),
+        supabase.from("group_members").select("*, profiles!group_members_student_id_fkey(first_name, last_name, student_id)"),
+      ]);
 
       if (profileRes.data) setProfile(profileRes.data);
       if (usersRes.data) setUsers(usersRes.data);
       if (groupsRes.data) setGroups(groupsRes.data);
       if (sessionsRes.data) setSessions(sessionsRes.data);
-      if (settingsRes.data) setMinSessions(settingsRes.data.value);
       if (lineChannelsRes.data) setLineChannels(lineChannelsRes.data);
       if (assignmentsRes.data) setTeacherAssignments(assignmentsRes.data);
       if (membersRes.data) setGroupMembers(membersRes.data);
@@ -217,90 +179,10 @@ export default function SuperAdmin() {
     }
   };
 
-  const updateSettings = async () => {
-    try {
-      const { error } = await supabase
-        .from("coaching_settings")
-        .update({ value: minSessions })
-        .eq("key", "min_sessions");
-
-      if (error) throw error;
-
-      toast({
-        title: "บันทึกสำเร็จ",
-        description: "อัปเดตการตั้งค่าแล้ว",
-      });
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "เกิดข้อผิดพลาด",
-        description: error.message,
-      });
-    }
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!itemToDelete) return;
-
-    try {
-      if (itemToDelete.type === "group") {
-        const { error } = await supabase.from("student_groups").delete().eq("id", itemToDelete.id);
-        if (error) throw error;
-        toast({ title: "ลบกลุ่มสำเร็จ" });
-      } else if (itemToDelete.type === "line_channel") {
-        const { error } = await supabase.from("line_notifications").delete().eq("id", itemToDelete.id);
-        if (error) throw error;
-        toast({ title: "ลบ LINE Channel สำเร็จ" });
-      } else if (itemToDelete.type === "teacher") {
-        // Delete teacher assignments first
-        const { error: assignmentError } = await supabase
-          .from("teacher_assignments")
-          .delete()
-          .eq("teacher_id", itemToDelete.id);
-        
-        if (assignmentError) throw assignmentError;
-
-        // Delete user from auth (this will cascade to profiles and user_roles)
-        const { error: deleteError } = await supabase.auth.admin.deleteUser(itemToDelete.id);
-        
-        if (deleteError) throw deleteError;
-        toast({ title: "ลบอาจารย์สำเร็จ" });
-      }
-
-      if (user) fetchData(user.id);
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "เกิดข้อผิดพลาด",
-        description: error.message,
-      });
-    } finally {
-      setDeleteConfirmOpen(false);
-      setItemToDelete(null);
-    }
-  };
-
-  const handleDeleteGroup = (groupId: string, groupName: string) => {
-    setItemToDelete({ type: "group", id: groupId, name: groupName });
-    setDeleteConfirmOpen(true);
-  };
-
-  const handleDeleteLineChannel = (channelId: string, channelName: string) => {
-    setItemToDelete({ type: "line_channel", id: channelId, name: channelName });
-    setDeleteConfirmOpen(true);
-  };
-
-  const handleDeleteTeacher = (teacherId: string, teacherName: string) => {
-    setItemToDelete({ type: "teacher", id: teacherId, name: teacherName });
-    setDeleteConfirmOpen(true);
-  };
-
+  // Group Management
   const handleAddGroup = async () => {
     if (!newGroup.name || !newGroup.major || !newGroup.yearLevel) {
-      toast({
-        variant: "destructive",
-        title: "กรุณากรอกข้อมูลให้ครบถ้วน",
-      });
+      toast({ variant: "destructive", title: "กรุณากรอกข้อมูลให้ครบถ้วน" });
       return;
     }
 
@@ -314,35 +196,22 @@ export default function SuperAdmin() {
 
       if (error) throw error;
 
-      toast({
-        title: "เพิ่มกลุ่มสำเร็จ",
-        description: `เพิ่มกลุ่ม ${newGroup.name} แล้ว`,
-      });
-
+      toast({ title: "เพิ่มกลุ่มสำเร็จ", description: `เพิ่มกลุ่ม ${newGroup.name} แล้ว` });
       setIsAddGroupOpen(false);
       setNewGroup({ name: "", major: "", yearLevel: "" });
       if (user) fetchData(user.id);
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "ไม่สามารถเพิ่มกลุ่มได้",
-        description: error.message,
-      });
+      toast({ variant: "destructive", title: "ไม่สามารถเพิ่มกลุ่มได้", description: error.message });
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleEditGroup = async () => {
-    if (!editGroup.name || !editGroup.major || !editGroup.yearLevel) {
-      toast({
-        variant: "destructive",
-        title: "กรุณากรอกข้อมูลให้ครบถ้วน",
-      });
+    if (!editGroup.name || !editGroup.major || !editGroup.yearLevel || !editingGroup) {
+      toast({ variant: "destructive", title: "กรุณากรอกข้อมูลให้ครบถ้วน" });
       return;
     }
-
-    if (!editingGroup) return;
 
     setIsSubmitting(true);
     try {
@@ -357,21 +226,13 @@ export default function SuperAdmin() {
 
       if (error) throw error;
 
-      toast({
-        title: "แก้ไขกลุ่มสำเร็จ",
-        description: `แก้ไขกลุ่ม ${editGroup.name} แล้ว`,
-      });
-
+      toast({ title: "แก้ไขกลุ่มสำเร็จ" });
       setIsEditGroupOpen(false);
       setEditingGroup(null);
       setEditGroup({ name: "", major: "", yearLevel: "" });
       if (user) fetchData(user.id);
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "ไม่สามารถแก้ไขกลุ่มได้",
-        description: error.message,
-      });
+      toast({ variant: "destructive", title: "ไม่สามารถแก้ไขกลุ่มได้", description: error.message });
     } finally {
       setIsSubmitting(false);
     }
@@ -387,26 +248,20 @@ export default function SuperAdmin() {
     setIsEditGroupOpen(true);
   };
 
+  // Teacher Management
   const handleAddTeacher = async () => {
     if (!newTeacher.email || !newTeacher.password || !newTeacher.firstName || !newTeacher.lastName) {
-      toast({
-        variant: "destructive",
-        title: "กรุณากรอกข้อมูลให้ครบถ้วน",
-      });
+      toast({ variant: "destructive", title: "กรุณากรอกข้อมูลให้ครบถ้วน" });
       return;
     }
 
     if (!newTeacher.email.endsWith("@spu.ac.th")) {
-      toast({
-        variant: "destructive",
-        title: "อีเมลต้องเป็นโดเมน @spu.ac.th เท่านั้น",
-      });
+      toast({ variant: "destructive", title: "อีเมลต้องเป็นโดเมน @spu.ac.th เท่านั้น" });
       return;
     }
 
     setIsSubmitting(true);
     try {
-      // Create user account
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: newTeacher.email,
         password: newTeacher.password,
@@ -422,7 +277,6 @@ export default function SuperAdmin() {
       if (authError) throw authError;
       if (!authData.user) throw new Error("Failed to create user");
 
-      // Update profile with name
       const { error: profileError } = await supabase
         .from("profiles")
         .update({
@@ -433,40 +287,22 @@ export default function SuperAdmin() {
 
       if (profileError) throw profileError;
 
-      // Assign to groups
       if (newTeacher.groupIds.length > 0) {
         const assignments = newTeacher.groupIds.map((groupId) => ({
           teacher_id: authData.user.id,
           group_id: groupId,
         }));
 
-        const { error: assignError } = await supabase
-          .from("teacher_assignments")
-          .insert(assignments);
-
+        const { error: assignError } = await supabase.from("teacher_assignments").insert(assignments);
         if (assignError) throw assignError;
       }
 
-      toast({
-        title: "สร้างบัญชีสำเร็จ",
-        description: `สร้างบัญชีอาจารย์ ${newTeacher.email} เรียบร้อยแล้ว`,
-      });
-
-      setNewTeacher({
-        email: "",
-        password: "",
-        firstName: "",
-        lastName: "",
-        groupIds: [],
-      });
+      toast({ title: "สร้างบัญชีสำเร็จ", description: `สร้างบัญชีอาจารย์ ${newTeacher.email} เรียบร้อยแล้ว` });
+      setNewTeacher({ email: "", password: "", firstName: "", lastName: "", groupIds: [] });
       setIsAddTeacherOpen(false);
       if (user) fetchData(user.id);
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "เกิดข้อผิดพลาด",
-        description: error.message,
-      });
+      toast({ variant: "destructive", title: "เกิดข้อผิดพลาด", description: error.message });
     } finally {
       setIsSubmitting(false);
     }
@@ -487,19 +323,13 @@ export default function SuperAdmin() {
   };
 
   const handleEditTeacherSubmit = async () => {
-    if (!editTeacher.firstName || !editTeacher.lastName) {
-      toast({
-        variant: "destructive",
-        title: "กรุณากรอกข้อมูลให้ครบถ้วน",
-      });
+    if (!editTeacher.firstName || !editTeacher.lastName || !editingTeacher) {
+      toast({ variant: "destructive", title: "กรุณากรอกข้อมูลให้ครบถ้วน" });
       return;
     }
 
-    if (!editingTeacher) return;
-
     setIsSubmitting(true);
     try {
-      // Update profile
       const { error: profileError } = await supabase
         .from("profiles")
         .update({
@@ -510,112 +340,27 @@ export default function SuperAdmin() {
 
       if (profileError) throw profileError;
 
-      // Delete existing assignments
-      await supabase
-        .from("teacher_assignments")
-        .delete()
-        .eq("teacher_id", editingTeacher.id);
+      await supabase.from("teacher_assignments").delete().eq("teacher_id", editingTeacher.id);
 
-      // Insert new assignments
       if (editTeacher.groupIds.length > 0) {
         const assignments = editTeacher.groupIds.map((groupId) => ({
           teacher_id: editingTeacher.id,
           group_id: groupId,
         }));
 
-        const { error: assignError } = await supabase
-          .from("teacher_assignments")
-          .insert(assignments);
-
+        const { error: assignError } = await supabase.from("teacher_assignments").insert(assignments);
         if (assignError) throw assignError;
       }
 
-      toast({
-        title: "แก้ไขสำเร็จ",
-        description: `แก้ไขข้อมูลอาจารย์ ${editTeacher.firstName} ${editTeacher.lastName} เรียบร้อยแล้ว`,
-      });
-
+      toast({ title: "แก้ไขสำเร็จ" });
       setIsEditTeacherOpen(false);
       setEditingTeacher(null);
       setEditTeacher({ firstName: "", lastName: "", groupIds: [] });
       await fetchData(user.id);
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "เกิดข้อผิดพลาด",
-        description: error.message,
-      });
+      toast({ variant: "destructive", title: "เกิดข้อผิดพลาด", description: error.message });
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const handleAddLineChannel = async () => {
-    if (!newLineChannel.name || !newLineChannel.channelAccessToken || !newLineChannel.channelSecret) {
-      toast({
-        variant: "destructive",
-        title: "กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน",
-      });
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const { error } = await supabase.from("line_notifications").insert({
-        name: newLineChannel.name,
-        description: newLineChannel.description,
-        channel_access_token: newLineChannel.channelAccessToken,
-        channel_secret: newLineChannel.channelSecret,
-        group_id: newLineChannel.groupId || null,
-        notification_type: newLineChannel.notificationType || null,
-        enabled: true,
-      });
-
-      if (error) throw error;
-
-      toast({
-        title: "เพิ่ม LINE Channel สำเร็จ",
-        description: `เพิ่ม ${newLineChannel.name} แล้ว`,
-      });
-
-      setIsAddLineChannelOpen(false);
-      setNewLineChannel({
-        name: "",
-        description: "",
-        channelAccessToken: "",
-        channelSecret: "",
-        groupId: "",
-        notificationType: "",
-      });
-      if (user) fetchData(user.id);
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "ไม่สามารถเพิ่ม LINE Channel ได้",
-        description: error.message,
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleToggleLineChannel = async (channelId: string, enabled: boolean) => {
-    try {
-      const { error } = await supabase.from("line_notifications").update({ enabled }).eq("id", channelId);
-
-      if (error) throw error;
-
-      toast({
-        title: enabled ? "เปิดใช้งานแล้ว" : "ปิดใช้งานแล้ว",
-      });
-
-      if (user) fetchData(user.id);
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "เกิดข้อผิดพลาด",
-        description: error.message,
-      });
     }
   };
 
@@ -640,196 +385,165 @@ export default function SuperAdmin() {
     }
   };
 
-  // FIXED: Improved teacher assignment with validation
-  const handleAssignTeacher = async (groupId: string, teacherId: string) => {
-    if (!teacherId) {
-      toast({
-        variant: "destructive",
-        title: "กรุณาเลือกอาจารย์",
-      });
+  // LINE Channel Management
+  const handleAddLineChannel = async () => {
+    if (!newLineChannel.name || !newLineChannel.channelAccessToken || !newLineChannel.channelSecret || !newLineChannel.notificationType) {
+      toast({ variant: "destructive", title: "กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน" });
       return;
     }
 
-    // Check if teacher is already assigned to this group
-    const isAlreadyAssigned = teacherAssignments.some(
-      (assignment) => assignment.group_id === groupId && assignment.teacher_id === teacherId,
-    );
-
-    if (isAlreadyAssigned) {
-      toast({
-        variant: "destructive",
-        title: "อาจารย์ถูกมอบหมายแล้ว",
-        description: "อาจารย์ท่านนี้ได้รับมอบหมายให้ดูแลกลุ่มนี้แล้ว",
-      });
+    if (newLineChannel.notificationType === "group" && !newLineChannel.groupId) {
+      toast({ variant: "destructive", title: "กรุณากรอก Group ID สำหรับ Group Message" });
       return;
     }
 
-    setIsAssigningTeacher(true);
-    console.log("Assigning teacher:", { groupId, teacherId });
-
+    setIsSubmitting(true);
     try {
-      const { data, error } = await supabase
-        .from("teacher_assignments")
-        .insert({
-          group_id: groupId,
-          teacher_id: teacherId,
-        })
-        .select();
-
-      if (error) {
-        console.error("Teacher assignment error:", error);
-        throw error;
-      }
-
-      console.log("Teacher assigned successfully:", data);
-
-      toast({
-        title: "มอบหมายอาจารย์สำเร็จ",
-        description: "เพิ่มอาจารย์ผู้รับผิดชอบกลุ่มแล้ว",
+      const { error } = await supabase.from("line_notifications").insert({
+        name: newLineChannel.name,
+        description: newLineChannel.description,
+        channel_access_token: newLineChannel.channelAccessToken,
+        channel_secret: newLineChannel.channelSecret,
+        group_id: newLineChannel.notificationType === "group" ? newLineChannel.groupId : null,
+        notification_type: newLineChannel.notificationType,
+        enabled: true,
       });
-
-      // Reset selection
-      setSelectedTeacher("");
-
-      if (user) await fetchData(user.id);
-    } catch (error: any) {
-      console.error("Error in handleAssignTeacher:", error);
-      toast({
-        variant: "destructive",
-        title: "เกิดข้อผิดพลาด",
-        description: error.message || "ไม่สามารถมอบหมายอาจารย์ได้",
-      });
-    } finally {
-      setIsAssigningTeacher(false);
-    }
-  };
-
-  const handleRemoveTeacherAssignment = async (assignmentId: string) => {
-    try {
-      const { error } = await supabase.from("teacher_assignments").delete().eq("id", assignmentId);
 
       if (error) throw error;
 
-      toast({ title: "ยกเลิกการมอบหมายสำเร็จ" });
+      toast({ title: "เพิ่ม LINE Channel สำเร็จ", description: `เพิ่ม ${newLineChannel.name} แล้ว` });
+      setIsAddLineChannelOpen(false);
+      setNewLineChannel({
+        name: "",
+        description: "",
+        channelAccessToken: "",
+        channelSecret: "",
+        groupId: "",
+        notificationType: "broadcast",
+      });
       if (user) fetchData(user.id);
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "เกิดข้อผิดพลาด",
-        description: error.message,
-      });
-    }
-  };
-
-  // FIXED: Improved student assignment with validation
-  const handleAddStudentToGroup = async (groupId: string, studentId: string) => {
-    if (!studentId) {
-      toast({
-        variant: "destructive",
-        title: "กรุณาเลือกนักศึกษา",
-      });
-      return;
-    }
-
-    // Check if student is already in this group
-    const isInGroup = groupMembers.some((member) => member.student_id === studentId && member.group_id === groupId);
-
-    if (isInGroup) {
-      toast({
-        variant: "destructive",
-        title: "นักศึกษาอยู่ในกลุ่มแล้ว",
-        description: "นักศึกษาท่านนี้อยู่ในกลุ่มนี้แล้ว",
-      });
-      return;
-    }
-
-    // Check if student is in another group
-    const existingMember = groupMembers.find((member) => member.student_id === studentId);
-    if (existingMember) {
-      const otherGroup = groups.find((g) => g.id === existingMember.group_id);
-      toast({
-        variant: "destructive",
-        title: "นักศึกษาอยู่ในกลุ่มอื่นแล้ว",
-        description: `นักศึกษาท่านนี้อยู่ใน ${otherGroup?.name || "กลุ่มอื่น"} แล้ว กรุณาลบออกจากกลุ่มเดิมก่อน`,
-      });
-      return;
-    }
-
-    setIsAddingStudent(true);
-    console.log("Adding student to group:", { groupId, studentId });
-
-    try {
-      // Insert into group_members
-      const { data: memberData, error: memberError } = await supabase
-        .from("group_members")
-        .insert({
-          group_id: groupId,
-          student_id: studentId,
-        })
-        .select();
-
-      if (memberError) {
-        console.error("Group member insert error:", memberError);
-        throw memberError;
-      }
-
-      console.log("Group member inserted:", memberData);
-
-      // Update profile with group_id
-      const { error: profileError } = await supabase.from("profiles").update({ group_id: groupId }).eq("id", studentId);
-
-      if (profileError) {
-        console.error("Profile update error:", profileError);
-        // Don't throw error here as the main operation succeeded
-      }
-
-      toast({
-        title: "เพิ่มนักศึกษาสำเร็จ",
-        description: "เพิ่มนักศึกษาเข้ากลุ่มแล้ว",
-      });
-
-      // Reset selection
-      setSelectedStudent("");
-
-      if (user) await fetchData(user.id);
-    } catch (error: any) {
-      console.error("Error in handleAddStudentToGroup:", error);
-      toast({
-        variant: "destructive",
-        title: "เกิดข้อผิดพลาด",
-        description: error.message || "ไม่สามารถเพิ่มนักศึกษาได้",
-      });
+      toast({ variant: "destructive", title: "ไม่สามารถเพิ่ม LINE Channel ได้", description: error.message });
     } finally {
-      setIsAddingStudent(false);
+      setIsSubmitting(false);
     }
   };
 
-  const handleRemoveStudentFromGroup = async (memberId: string, studentId: string) => {
+  const openEditLineChannelDialog = (channel: any) => {
+    setEditingLineChannel(channel);
+    setEditLineChannel({
+      name: channel.name,
+      description: channel.description || "",
+      channelAccessToken: channel.channel_access_token,
+      channelSecret: channel.channel_secret,
+      groupId: channel.group_id || "",
+      notificationType: channel.notification_type,
+    });
+    setIsEditLineChannelOpen(true);
+  };
+
+  const handleEditLineChannel = async () => {
+    if (!editLineChannel.name || !editLineChannel.channelAccessToken || !editLineChannel.channelSecret || !editingLineChannel) {
+      toast({ variant: "destructive", title: "กรุณากรอกข้อมูลให้ครบถ้วน" });
+      return;
+    }
+
+    if (editLineChannel.notificationType === "group" && !editLineChannel.groupId) {
+      toast({ variant: "destructive", title: "กรุณากรอก Group ID สำหรับ Group Message" });
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
-      const { error } = await supabase.from("group_members").delete().eq("id", memberId);
+      const { error } = await supabase
+        .from("line_notifications")
+        .update({
+          name: editLineChannel.name,
+          description: editLineChannel.description,
+          channel_access_token: editLineChannel.channelAccessToken,
+          channel_secret: editLineChannel.channelSecret,
+          group_id: editLineChannel.notificationType === "group" ? editLineChannel.groupId : null,
+          notification_type: editLineChannel.notificationType,
+        })
+        .eq("id", editingLineChannel.id);
 
       if (error) throw error;
 
-      await supabase.from("profiles").update({ group_id: null }).eq("id", studentId);
-
-      toast({ title: "ลบนักศึกษาสำเร็จ" });
+      toast({ title: "แก้ไข LINE Channel สำเร็จ" });
+      setIsEditLineChannelOpen(false);
+      setEditingLineChannel(null);
+      setEditLineChannel({
+        name: "",
+        description: "",
+        channelAccessToken: "",
+        channelSecret: "",
+        groupId: "",
+        notificationType: "broadcast",
+      });
       if (user) fetchData(user.id);
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "เกิดข้อผิดพลาด",
-        description: error.message,
-      });
+      toast({ variant: "destructive", title: "ไม่สามารถแก้ไข LINE Channel ได้", description: error.message });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  // Filter groups based on search
-  const filteredGroups = groups.filter(
-    (g) =>
-      g.name?.toLowerCase().includes(groupSearchQuery.toLowerCase()) ||
-      g.major?.toLowerCase().includes(groupSearchQuery.toLowerCase()) ||
-      g.year_level?.toLowerCase().includes(groupSearchQuery.toLowerCase()),
-  );
+  const handleToggleLineChannel = async (channelId: string, enabled: boolean) => {
+    try {
+      const { error } = await supabase.from("line_notifications").update({ enabled }).eq("id", channelId);
+      if (error) throw error;
+      toast({ title: enabled ? "เปิดใช้งานแล้ว" : "ปิดใช้งานแล้ว" });
+      if (user) fetchData(user.id);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "เกิดข้อผิดพลาด", description: error.message });
+    }
+  };
+
+  // Delete handlers
+  const handleDeleteConfirm = async () => {
+    if (!itemToDelete) return;
+
+    try {
+      if (itemToDelete.type === "group") {
+        const { error } = await supabase.from("student_groups").delete().eq("id", itemToDelete.id);
+        if (error) throw error;
+        toast({ title: "ลบกลุ่มสำเร็จ" });
+      } else if (itemToDelete.type === "line_channel") {
+        const { error } = await supabase.from("line_notifications").delete().eq("id", itemToDelete.id);
+        if (error) throw error;
+        toast({ title: "ลบ LINE Channel สำเร็จ" });
+      } else if (itemToDelete.type === "teacher") {
+        const { error: assignmentError } = await supabase.from("teacher_assignments").delete().eq("teacher_id", itemToDelete.id);
+        if (assignmentError) throw assignmentError;
+
+        const { error: deleteError } = await supabase.auth.admin.deleteUser(itemToDelete.id);
+        if (deleteError) throw deleteError;
+        toast({ title: "ลบอาจารย์สำเร็จ" });
+      }
+
+      if (user) fetchData(user.id);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "เกิดข้อผิดพลาด", description: error.message });
+    } finally {
+      setDeleteConfirmOpen(false);
+      setItemToDelete(null);
+    }
+  };
+
+  const handleDeleteGroup = (groupId: string, groupName: string) => {
+    setItemToDelete({ type: "group", id: groupId, name: groupName });
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteLineChannel = (channelId: string, channelName: string) => {
+    setItemToDelete({ type: "line_channel", id: channelId, name: channelName });
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteTeacher = (teacherId: string, teacherName: string) => {
+    setItemToDelete({ type: "teacher", id: teacherId, name: teacherName });
+    setDeleteConfirmOpen(true);
+  };
 
   if (isLoading) {
     return (
@@ -847,1073 +561,763 @@ export default function SuperAdmin() {
               </Card>
             ))}
           </div>
-          <Card>
-            <CardHeader>
-              <Skeleton className="h-6 w-40" />
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </DashboardLayout>
     );
   }
 
-  const studentCount = users.filter((u) => u.user_roles?.[0]?.role === "student").length;
-  const teacherCount = users.filter((u) => u.user_roles?.[0]?.role === "teacher").length;
-  const adminCount = users.filter((u) => u.user_roles?.[0]?.role === "admin").length;
-
   const students = users.filter((u) => u.user_roles?.[0]?.role === "student");
   const teachers = users.filter((u) => u.user_roles?.[0]?.role === "teacher");
-
-  const dashboardStats = {
-    totalStudents: studentCount,
-    totalTeachers: teacherCount,
-    totalGroups: groups.length,
-    totalSessions: sessions.length,
-    approvedSessions: sessions.filter((s) => s.status === "approved").length,
-    pendingSessions: sessions.filter((s) => s.status === "pending").length,
-    rejectedSessions: sessions.filter((s) => s.status === "rejected").length,
-    sessionsByGroup: groups.map((g) => ({
-      name: g.name,
-      count: sessions.filter((s) => s.profiles?.group_id === g.id).length,
-    })),
-    sessionsByStatus: [
-      { name: "อนุมัติแล้ว", value: sessions.filter((s) => s.status === "approved").length },
-      { name: "รอตรวจสอบ", value: sessions.filter((s) => s.status === "pending").length },
-      { name: "ไม่อนุมัติ", value: sessions.filter((s) => s.status === "rejected").length },
-    ],
-  };
+  const admins = users.filter((u) => u.user_roles?.[0]?.role === "admin");
 
   return (
     <DashboardLayout role="super_admin" userName={`${profile?.first_name || ""} ${profile?.last_name || ""}`}>
-      <TooltipProvider>
-        <div className="space-y-6 animate-in fade-in duration-500">
-          <AppointmentCalendar role="super_admin" userId={user?.id || ""} />
+      <div className="space-y-6">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card className="border-l-4 border-l-blue-500">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">นักศึกษา</CardTitle>
+              <Users className="w-5 h-5 text-blue-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">{students.length}</div>
+            </CardContent>
+          </Card>
 
-          {/* Stats Cards with hover effects */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card className="hover:shadow-lg transition-shadow duration-300 border-l-4 border-l-blue-500">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">นักศึกษา</CardTitle>
-                <Users className="w-5 h-5 text-blue-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold">{studentCount}</div>
-                <p className="text-xs text-muted-foreground mt-1">ผู้ใช้งานทั้งหมด</p>
-              </CardContent>
-            </Card>
+          <Card className="border-l-4 border-l-green-500">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">อาจารย์</CardTitle>
+              <Shield className="w-5 h-5 text-green-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">{teachers.length}</div>
+            </CardContent>
+          </Card>
 
-            <Card className="hover:shadow-lg transition-shadow duration-300 border-l-4 border-l-green-500">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">อาจารย์</CardTitle>
-                <Shield className="w-5 h-5 text-green-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold">{teacherCount}</div>
-                <p className="text-xs text-muted-foreground mt-1">อาจารย์ผู้สอน</p>
-              </CardContent>
-            </Card>
+          <Card className="border-l-4 border-l-purple-500">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">ผู้ดูแลระบบ</CardTitle>
+              <Shield className="w-5 h-5 text-purple-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">{admins.length}</div>
+            </CardContent>
+          </Card>
 
-            <Card className="hover:shadow-lg transition-shadow duration-300 border-l-4 border-l-purple-500">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">ผู้ดูแลระบบ</CardTitle>
-                <Shield className="w-5 h-5 text-purple-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold">{adminCount}</div>
-                <p className="text-xs text-muted-foreground mt-1">แอดมินทั้งหมด</p>
-              </CardContent>
-            </Card>
+          <Card className="border-l-4 border-l-orange-500">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">ใบ Coaching</CardTitle>
+              <FileCheck className="w-5 h-5 text-orange-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">{sessions.length}</div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {sessions.filter((s) => s.status === "pending").length} รอตรวจสอบ
+              </p>
+            </CardContent>
+          </Card>
+        </div>
 
-            <Card className="hover:shadow-lg transition-shadow duration-300 border-l-4 border-l-orange-500">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">ใบ Coaching</CardTitle>
-                <FileCheck className="w-5 h-5 text-orange-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold">{sessions.length}</div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {sessions.filter((s) => s.status === "pending").length} รอตรวจสอบ
-                </p>
-              </CardContent>
-            </Card>
-          </div>
+        <Tabs defaultValue="teachers" className="w-full">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="teachers">จัดการอาจารย์</TabsTrigger>
+            <TabsTrigger value="groups">จัดการกลุ่ม</TabsTrigger>
+            <TabsTrigger value="line">LINE Broadcast</TabsTrigger>
+            <TabsTrigger value="settings">ตั้งค่า</TabsTrigger>
+          </TabsList>
 
-          <Tabs defaultValue="dashboard" className="w-full">
-            <TabsList className="grid w-full grid-cols-5 h-auto p-1">
-              <TabsTrigger
-                value="teachers"
-                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-              >
-                จัดการอาจารย์
-              </TabsTrigger>
-              <TabsTrigger
-                value="groups"
-                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-              >
-                จัดการกลุ่ม
-              </TabsTrigger>
-              <TabsTrigger
-                value="line"
-                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-              >
-                LINE Notifications
-              </TabsTrigger>
-              <TabsTrigger
-                value="settings"
-                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-              >
-                ตั้งค่าระบบ
-              </TabsTrigger>
-            </TabsList>
-
-
-            <TabsContent value="teachers" className="space-y-4 animate-in fade-in duration-300">
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="flex items-center gap-2">
-                        <Shield className="w-5 h-5" />
-                        จัดการบัญชีอาจารย์
-                      </CardTitle>
-                      <CardDescription>สร้างบัญชีและมอบหมายกลุ่มให้อาจารย์</CardDescription>
-                    </div>
-                    <Dialog open={isAddTeacherOpen} onOpenChange={setIsAddTeacherOpen}>
-                      <DialogTrigger asChild>
-                        <Button className="bg-primary hover:bg-primary/90">
-                          <UserPlus className="w-4 h-4 mr-2" />
-                          เพิ่มอาจารย์
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="bg-background border shadow-lg">
-                        <DialogHeader>
-                          <DialogTitle>เพิ่มบัญชีอาจารย์</DialogTitle>
-                          <DialogDescription>สร้างบัญชีใหม่สำหรับอาจารย์</DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="teacher-email">อีเมล (@spu.ac.th) <span className="text-red-500">*</span></Label>
-                            <Input
-                              id="teacher-email"
-                              type="email"
-                              placeholder="teacher@spu.ac.th"
-                              value={newTeacher.email}
-                              onChange={(e) => setNewTeacher({ ...newTeacher, email: e.target.value })}
-                              className="bg-background"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="teacher-password">รหัสผ่าน <span className="text-red-500">*</span></Label>
-                            <Input
-                              id="teacher-password"
-                              type="password"
-                              value={newTeacher.password}
-                              onChange={(e) => setNewTeacher({ ...newTeacher, password: e.target.value })}
-                              className="bg-background"
-                            />
-                          </div>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                              <Label htmlFor="teacher-firstName">ชื่อ <span className="text-red-500">*</span></Label>
-                              <Input
-                                id="teacher-firstName"
-                                value={newTeacher.firstName}
-                                onChange={(e) => setNewTeacher({ ...newTeacher, firstName: e.target.value })}
-                                className="bg-background"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="teacher-lastName">นามสกุล <span className="text-red-500">*</span></Label>
-                              <Input
-                                id="teacher-lastName"
-                                value={newTeacher.lastName}
-                                onChange={(e) => setNewTeacher({ ...newTeacher, lastName: e.target.value })}
-                                className="bg-background"
-                              />
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <Label>กลุ่มที่รับผิดชอบ (เลือกได้หลายกลุ่ม)</Label>
-                            <div className="border rounded-md p-3 space-y-2 max-h-[200px] overflow-y-auto bg-background">
-                              {groups.map((group) => (
-                                <div key={group.id} className="flex items-center space-x-2">
-                                  <input
-                                    type="checkbox"
-                                    id={`group-${group.id}`}
-                                    checked={newTeacher.groupIds.includes(group.id)}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setNewTeacher({
-                                          ...newTeacher,
-                                          groupIds: [...newTeacher.groupIds, group.id],
-                                        });
-                                      } else {
-                                        setNewTeacher({
-                                          ...newTeacher,
-                                          groupIds: newTeacher.groupIds.filter((id) => id !== group.id),
-                                        });
-                                      }
-                                    }}
-                                    className="rounded"
-                                  />
-                                  <Label htmlFor={`group-${group.id}`} className="font-normal cursor-pointer">
-                                    {group.name} - {group.major} ปี {group.year_level}
-                                  </Label>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                        <DialogFooter>
-                          <Button variant="outline" onClick={() => setIsAddTeacherOpen(false)} disabled={isSubmitting}>
-                            ยกเลิก
-                          </Button>
-                          <Button onClick={handleAddTeacher} disabled={isSubmitting}>
-                            {isSubmitting ? (
-                              <>
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                กำลังสร้าง...
-                              </>
-                            ) : (
-                              "สร้างบัญชี"
-                            )}
-                          </Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
-
-                    {/* Edit Teacher Dialog */}
-                    <Dialog open={isEditTeacherOpen} onOpenChange={setIsEditTeacherOpen}>
-                      <DialogContent className="bg-background border shadow-lg">
-                        <DialogHeader>
-                          <DialogTitle>แก้ไขข้อมูลอาจารย์</DialogTitle>
-                          <DialogDescription>แก้ไขชื่อและกลุ่มที่รับผิดชอบ</DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-4">
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                              <Label htmlFor="edit-teacher-firstName">ชื่อ <span className="text-red-500">*</span></Label>
-                              <Input
-                                id="edit-teacher-firstName"
-                                value={editTeacher.firstName}
-                                onChange={(e) => setEditTeacher({ ...editTeacher, firstName: e.target.value })}
-                                className="bg-background"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="edit-teacher-lastName">นามสกุล <span className="text-red-500">*</span></Label>
-                              <Input
-                                id="edit-teacher-lastName"
-                                value={editTeacher.lastName}
-                                onChange={(e) => setEditTeacher({ ...editTeacher, lastName: e.target.value })}
-                                className="bg-background"
-                              />
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <Label>กลุ่มที่รับผิดชอบ</Label>
-                            <div className="space-y-2 max-h-48 overflow-y-auto border rounded p-3 bg-muted/30">
-                              {groups.map((group) => (
-                                <div key={group.id} className="flex items-center space-x-2">
-                                  <input
-                                    type="checkbox"
-                                    id={`edit-group-${group.id}`}
-                                    checked={editTeacher.groupIds.includes(group.id)}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setEditTeacher({
-                                          ...editTeacher,
-                                          groupIds: [...editTeacher.groupIds, group.id],
-                                        });
-                                      } else {
-                                        setEditTeacher({
-                                          ...editTeacher,
-                                          groupIds: editTeacher.groupIds.filter((id) => id !== group.id),
-                                        });
-                                      }
-                                    }}
-                                    className="rounded"
-                                  />
-                                  <Label htmlFor={`edit-group-${group.id}`} className="font-normal cursor-pointer">
-                                    {group.name} - {group.major} ปี {group.year_level}
-                                  </Label>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                        <DialogFooter>
-                          <Button variant="outline" onClick={() => setIsEditTeacherOpen(false)} disabled={isSubmitting}>
-                            ยกเลิก
-                          </Button>
-                          <Button onClick={handleEditTeacherSubmit} disabled={isSubmitting}>
-                            {isSubmitting ? (
-                              <>
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                กำลังบันทึก...
-                              </>
-                            ) : (
-                              "บันทึก"
-                            )}
-                          </Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
+          {/* Teachers Tab */}
+          <TabsContent value="teachers" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>จัดการอาจารย์</CardTitle>
+                    <CardDescription>เพิ่ม แก้ไข หรือลบอาจารย์</CardDescription>
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>ชื่อ-นามสกุล</TableHead>
-                        <TableHead>อีเมล</TableHead>
-                        <TableHead>กลุ่มที่รับผิดชอบ</TableHead>
-                        <TableHead className="text-right">จัดการ</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {teachers.map((teacher: any) => {
-                        const teacherGroups = teacherAssignments
-                          .filter((ta: any) => ta.teacher_id === teacher.id)
-                          .map((ta: any) => {
-                            const group = groups.find((g) => g.id === ta.group_id);
-                            return group ? `${group.name} (${group.major})` : "";
-                          })
-                          .filter(Boolean)
-                          .join(", ");
-
-                        return (
-                          <TableRow key={teacher.id}>
-                            <TableCell className="font-medium">
-                              {teacher.first_name} {teacher.last_name}
-                            </TableCell>
-                            <TableCell>{teacher.email}</TableCell>
-                            <TableCell>{teacherGroups || "-"}</TableCell>
-                            <TableCell>
-                              <div className="flex items-center justify-end gap-2">
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => openEditTeacherDialog(teacher)}
-                                        className="hover:bg-blue-50 hover:text-blue-600"
-                                      >
-                                        <Edit className="w-4 h-4" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>แก้ไขข้อมูล</TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleToggleLock(teacher.id, !teacher.is_locked)}
-                                  className={teacher.is_locked ? "text-amber-600 hover:bg-amber-50" : "hover:bg-amber-50"}
-                                >
-                                  {teacher.is_locked ? "ปลดล็อก" : "ล็อก"}
-                                </Button>
-
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleSendResetPassword(teacher.email)}
-                                  className="hover:bg-slate-50"
-                                >
-                                  รีเซ็ตรหัสผ่าน
-                                </Button>
-
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleDeleteTeacher(teacher.id, `${teacher.first_name} ${teacher.last_name}`)}
-                                        className="hover:bg-red-50 hover:text-red-600"
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>ลบอาจารย์</TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="groups" className="space-y-4 animate-in fade-in duration-300">
-              <Card>
-                <CardHeader>
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div>
-                      <CardTitle>จัดการกลุ่มนักศึกษา</CardTitle>
-                      <CardDescription>
-                        เพิ่ม แก้ไข หรือลบกลุ่มเรียน ({filteredGroups.length} จาก {groups.length})
-                      </CardDescription>
-                    </div>
-                    <Dialog open={isAddGroupOpen} onOpenChange={setIsAddGroupOpen}>
-                      <DialogTrigger asChild>
-                        <Button className="bg-primary hover:bg-primary/90">
-                          <UserPlus className="w-4 h-4 mr-2" />
-                          เพิ่มกลุ่ม
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>เพิ่มกลุ่มใหม่</DialogTitle>
-                          <DialogDescription>กรอกข้อมูลกลุ่มนักศึกษาใหม่</DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-4 py-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="groupName">
-                              ชื่อกลุ่ม <span className="text-red-500">*</span>
-                            </Label>
-                            <Input
-                              id="groupName"
-                              placeholder="เช่น กลุ่ม 1, Section A"
-                              value={newGroup.name}
-                              onChange={(e) => setNewGroup({ ...newGroup, name: e.target.value })}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="major">
-                              สาขา <span className="text-red-500">*</span>
-                            </Label>
-                            <Input
-                              id="major"
-                              placeholder="เช่น วิทยาการคอมพิวเตอร์"
-                              value={newGroup.major}
-                              onChange={(e) => setNewGroup({ ...newGroup, major: e.target.value })}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="yearLevel">
-                              ชั้นปี <span className="text-red-500">*</span>
-                            </Label>
-                            <Input
-                              id="yearLevel"
-                              placeholder="เช่น 1, 2, 3, 4"
-                              value={newGroup.yearLevel}
-                              onChange={(e) => setNewGroup({ ...newGroup, yearLevel: e.target.value })}
-                            />
-                          </div>
+                  <Dialog open={isAddTeacherOpen} onOpenChange={setIsAddTeacherOpen}>
+                    <DialogTrigger asChild>
+                      <Button>
+                        <UserPlus className="w-4 h-4 mr-2" />
+                        เพิ่มอาจารย์
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>เพิ่มอาจารย์ใหม่</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div>
+                          <Label htmlFor="teacher-email">อีเมล (@spu.ac.th)</Label>
+                          <Input
+                            id="teacher-email"
+                            type="email"
+                            value={newTeacher.email}
+                            onChange={(e) => setNewTeacher({ ...newTeacher, email: e.target.value })}
+                            placeholder="example@spu.ac.th"
+                          />
                         </div>
-                        <DialogFooter>
-                          <Button variant="outline" onClick={() => setIsAddGroupOpen(false)} disabled={isSubmitting}>
-                            ยกเลิก
-                          </Button>
-                          <Button onClick={handleAddGroup} disabled={isSubmitting}>
-                            {isSubmitting ? (
-                              <>
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                กำลังเพิ่ม...
-                              </>
-                            ) : (
-                              "เพิ่มกลุ่ม"
-                            )}
-                          </Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
-
-                    {/* Edit Group Dialog */}
-                    <Dialog open={isEditGroupOpen} onOpenChange={setIsEditGroupOpen}>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>แก้ไขกลุ่ม</DialogTitle>
-                          <DialogDescription>แก้ไขข้อมูลกลุ่มนักศึกษา</DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-4 py-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="editGroupName">
-                              ชื่อกลุ่ม <span className="text-red-500">*</span>
-                            </Label>
-                            <Input
-                              id="editGroupName"
-                              placeholder="เช่น กลุ่ม 1, Section A"
-                              value={editGroup.name}
-                              onChange={(e) => setEditGroup({ ...editGroup, name: e.target.value })}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="editMajor">
-                              สาขา <span className="text-red-500">*</span>
-                            </Label>
-                            <Input
-                              id="editMajor"
-                              placeholder="เช่น วิทยาการคอมพิวเตอร์"
-                              value={editGroup.major}
-                              onChange={(e) => setEditGroup({ ...editGroup, major: e.target.value })}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="editYearLevel">
-                              ชั้นปี <span className="text-red-500">*</span>
-                            </Label>
-                            <Input
-                              id="editYearLevel"
-                              placeholder="เช่น 1, 2, 3, 4"
-                              value={editGroup.yearLevel}
-                              onChange={(e) => setEditGroup({ ...editGroup, yearLevel: e.target.value })}
-                            />
-                          </div>
+                        <div>
+                          <Label htmlFor="teacher-password">รหัสผ่าน</Label>
+                          <Input
+                            id="teacher-password"
+                            type="password"
+                            value={newTeacher.password}
+                            onChange={(e) => setNewTeacher({ ...newTeacher, password: e.target.value })}
+                          />
                         </div>
-                        <DialogFooter>
-                          <Button
-                            variant="outline"
-                            onClick={() => {
-                              setIsEditGroupOpen(false);
-                              setEditingGroup(null);
-                            }}
-                            disabled={isSubmitting}
-                          >
-                            ยกเลิก
-                          </Button>
-                          <Button onClick={handleEditGroup} disabled={isSubmitting}>
-                            {isSubmitting ? (
-                              <>
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                กำลังบันทึก...
-                              </>
-                            ) : (
-                              "บันทึกการเปลี่ยนแปลง"
-                            )}
-                          </Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Group Search */}
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="ค้นหากลุ่มด้วยชื่อ, สาขา, หรือชั้นปี..."
-                      value={groupSearchQuery}
-                      onChange={(e) => setGroupSearchQuery(e.target.value)}
-                      className="pl-10"
-                    />
-                  </div>
-
-                  {/* Groups Table */}
-                  {filteredGroups.length === 0 ? (
-                    <Alert>
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription>
-                        {groupSearchQuery ? "ไม่พบกลุ่มที่ตรงกับเงื่อนไขการค้นหา" : "ยังไม่มีกลุ่มในระบบ"}
-                      </AlertDescription>
-                    </Alert>
-                  ) : (
-                    <div className="rounded-md border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-muted/50">
-                            <TableHead>ชื่อกลุ่ม</TableHead>
-                            <TableHead>สาขา</TableHead>
-                            <TableHead>ชั้นปี</TableHead>
-                            <TableHead className="text-right">ดำเนินการ</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {filteredGroups.map((group: any) => (
-                            <React.Fragment key={group.id}>
-                              <TableRow className="hover:bg-muted/50 transition-colors">
-                                <TableCell className="font-medium">{group.name}</TableCell>
-                                <TableCell>{group.major}</TableCell>
-                                <TableCell>{group.year_level}</TableCell>
-                                <TableCell className="text-right space-x-2">
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => openEditGroupDialog(group)}
-                                        className="hover:bg-blue-50 hover:text-blue-600"
-                                      >
-                                        <svg
-                                          xmlns="http://www.w3.org/2000/svg"
-                                          fill="none"
-                                          viewBox="0 0 24 24"
-                                          strokeWidth={1.5}
-                                          stroke="currentColor"
-                                          className="w-4 h-4"
-                                        >
-                                          <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"
-                                          />
-                                        </svg>
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>แก้ไขกลุ่ม</TooltipContent>
-                                  </Tooltip>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setSelectedGroup(selectedGroup === group.id ? null : group.id)}
-                                  >
-                                    {selectedGroup === group.id ? "ซ่อน" : "จัดการ"}
-                                  </Button>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleDeleteGroup(group.id, group.name)}
-                                        className="hover:bg-red-50 hover:text-red-600"
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>ลบกลุ่ม</TooltipContent>
-                                  </Tooltip>
-                                </TableCell>
-                              </TableRow>
-                              {selectedGroup === group.id && (
-                                <TableRow>
-                                  <TableCell colSpan={4}>
-                                    <div className="p-6 space-y-6 bg-muted/30 rounded-lg animate-in fade-in duration-200">
-                                      {/* Teachers Section - FIXED */}
-                                      <div className="space-y-3">
-                                        <div className="flex items-center gap-2">
-                                          <Shield className="w-4 h-4 text-green-600" />
-                                          <h4 className="font-semibold">อาจารย์ผู้รับผิดชอบ</h4>
-                                        </div>
-                                        <div className="flex gap-2 flex-wrap">
-                                          {teacherAssignments
-                                            .filter((a) => a.group_id === group.id)
-                                            .map((assignment) => (
-                                              <Badge
-                                                key={assignment.id}
-                                                variant="secondary"
-                                                className="gap-2 py-1.5 px-3"
-                                              >
-                                                {assignment.profiles?.first_name} {assignment.profiles?.last_name}
-                                                <button
-                                                  onClick={() => handleRemoveTeacherAssignment(assignment.id)}
-                                                  className="ml-1 hover:text-destructive transition-colors"
-                                                >
-                                                  ✕
-                                                </button>
-                                              </Badge>
-                                            ))}
-                                          {teacherAssignments.filter((a) => a.group_id === group.id).length === 0 && (
-                                            <p className="text-sm text-muted-foreground">ยังไม่มีอาจารย์ผู้รับผิดชอบ</p>
-                                          )}
-                                        </div>
-                                        <div className="flex gap-2">
-                                          <Select
-                                            value={selectedGroup === group.id ? selectedTeacher : ""}
-                                            onValueChange={setSelectedTeacher}
-                                          >
-                                            <SelectTrigger className="w-full md:w-[300px]">
-                                              <SelectValue placeholder="เลือกอาจารย์" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              {teachers
-                                                .filter(
-                                                  (t) =>
-                                                    !teacherAssignments.some(
-                                                      (a) => a.teacher_id === t.id && a.group_id === group.id,
-                                                    ),
-                                                )
-                                                .map((t) => (
-                                                  <SelectItem key={t.id} value={t.id}>
-                                                    {t.first_name} {t.last_name} {t.employee_id && `(${t.employee_id})`}
-                                                  </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                          </Select>
-                                          <Button
-                                            onClick={() => {
-                                              if (selectedTeacher) {
-                                                handleAssignTeacher(group.id, selectedTeacher);
-                                              }
-                                            }}
-                                            disabled={isAssigningTeacher || !selectedTeacher}
-                                            size="sm"
-                                          >
-                                            {isAssigningTeacher ? (
-                                              <Loader2 className="w-4 h-4 animate-spin" />
-                                            ) : (
-                                              "เพิ่ม"
-                                            )}
-                                          </Button>
-                                        </div>
-                                      </div>
-
-                                      {/* Students Section - FIXED */}
-                                      <div className="space-y-3">
-                                        <div className="flex items-center gap-2">
-                                          <Users className="w-4 h-4 text-blue-600" />
-                                          <h4 className="font-semibold">นักศึกษาในกลุ่ม</h4>
-                                        </div>
-                                        <div className="flex gap-2 flex-wrap">
-                                          {groupMembers
-                                            .filter((m) => m.group_id === group.id)
-                                            .map((member) => (
-                                              <Badge key={member.id} variant="outline" className="gap-2 py-1.5 px-3">
-                                                {member.profiles?.first_name} {member.profiles?.last_name}
-                                                {member.profiles?.student_id && ` (${member.profiles.student_id})`}
-                                                <button
-                                                  onClick={() =>
-                                                    handleRemoveStudentFromGroup(member.id, member.student_id)
-                                                  }
-                                                  className="ml-1 hover:text-destructive transition-colors"
-                                                >
-                                                  ✕
-                                                </button>
-                                              </Badge>
-                                            ))}
-                                          {groupMembers.filter((m) => m.group_id === group.id).length === 0 && (
-                                            <p className="text-sm text-muted-foreground">ยังไม่มีนักศึกษาในกลุ่ม</p>
-                                          )}
-                                        </div>
-                                        <div className="flex gap-2">
-                                          <Select
-                                            value={selectedGroup === group.id ? selectedStudent : ""}
-                                            onValueChange={setSelectedStudent}
-                                          >
-                                            <SelectTrigger className="w-full md:w-[300px]">
-                                              <SelectValue placeholder="เลือกนักศึกษา" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              {students
-                                                .filter(
-                                                  (s) =>
-                                                    // Exclude students already in ANY group
-                                                    !groupMembers.some((m) => m.student_id === s.id),
-                                                )
-                                                .map((s) => (
-                                                  <SelectItem key={s.id} value={s.id}>
-                                                    {s.first_name} {s.last_name} {s.student_id && `(${s.student_id})`}
-                                                  </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                          </Select>
-                                          <Button
-                                            onClick={() => {
-                                              if (selectedStudent) {
-                                                handleAddStudentToGroup(group.id, selectedStudent);
-                                              }
-                                            }}
-                                            disabled={isAddingStudent || !selectedStudent}
-                                            size="sm"
-                                          >
-                                            {isAddingStudent ? <Loader2 className="w-4 h-4 animate-spin" /> : "เพิ่ม"}
-                                          </Button>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </TableCell>
-                                </TableRow>
-                              )}
-                            </React.Fragment>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="line" className="space-y-4 animate-in fade-in duration-300">
-              <Card>
-                <CardHeader>
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div>
-                      <CardTitle>จัดการ LINE Notifications</CardTitle>
-                      <CardDescription>เพิ่ม แก้ไข หรือลบ LINE Channel (รองรับได้ถึง 5-6 channels)</CardDescription>
-                    </div>
-                    <Dialog open={isAddLineChannelOpen} onOpenChange={setIsAddLineChannelOpen}>
-                      <DialogTrigger asChild>
-                        <Button className="bg-primary hover:bg-primary/90">
-                          <UserPlus className="w-4 h-4 mr-2" />
-                          เพิ่ม Channel
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                        <DialogHeader>
-                          <DialogTitle>เพิ่ม LINE Channel ใหม่</DialogTitle>
-                          <DialogDescription>
-                            กรอกข้อมูล Channel Access Token และ Channel Secret จาก LINE Developers Console
-                          </DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-4 py-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="channelName">
-                              ชื่อ Channel <span className="text-red-500">*</span>
-                            </Label>
-                            <Input
-                              id="channelName"
-                              placeholder="เช่น LINE Group 1"
-                              value={newLineChannel.name}
-                              onChange={(e) => setNewLineChannel({ ...newLineChannel, name: e.target.value })}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="description">คำอธิบาย</Label>
-                            <Textarea
-                              id="description"
-                              placeholder="คำอธิบายเกี่ยวกับ channel นี้"
-                              value={newLineChannel.description}
-                              onChange={(e) => setNewLineChannel({ ...newLineChannel, description: e.target.value })}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="accessToken">
-                              Channel Access Token <span className="text-red-500">*</span>
-                            </Label>
-                            <Textarea
-                              id="accessToken"
-                              placeholder="Channel Access Token จาก LINE Developers"
-                              value={newLineChannel.channelAccessToken}
-                              onChange={(e) =>
-                                setNewLineChannel({ ...newLineChannel, channelAccessToken: e.target.value })
+                        <div>
+                          <Label htmlFor="teacher-firstname">ชื่อ</Label>
+                          <Input
+                            id="teacher-firstname"
+                            value={newTeacher.firstName}
+                            onChange={(e) => setNewTeacher({ ...newTeacher, firstName: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="teacher-lastname">นามสกุล</Label>
+                          <Input
+                            id="teacher-lastname"
+                            value={newTeacher.lastName}
+                            onChange={(e) => setNewTeacher({ ...newTeacher, lastName: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label>กลุ่มที่รับผิดชอบ</Label>
+                          <Select
+                            value={newTeacher.groupIds[0] || ""}
+                            onValueChange={(value) => {
+                              const currentIds = newTeacher.groupIds;
+                              if (currentIds.includes(value)) {
+                                setNewTeacher({ ...newTeacher, groupIds: currentIds.filter(id => id !== value) });
+                              } else {
+                                setNewTeacher({ ...newTeacher, groupIds: [...currentIds, value] });
                               }
-                              rows={3}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="secret">
-                              Channel Secret <span className="text-red-500">*</span>
-                            </Label>
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="เลือกกลุ่ม" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {groups.map((group) => (
+                                <SelectItem key={group.id} value={group.id}>
+                                  {group.name} - {group.major} ปี {group.year_level}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {newTeacher.groupIds.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              {newTeacher.groupIds.map(id => {
+                                const group = groups.find(g => g.id === id);
+                                return group ? (
+                                  <Badge key={id} variant="secondary">
+                                    {group.name}
+                                  </Badge>
+                                ) : null;
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button onClick={handleAddTeacher} disabled={isSubmitting}>
+                          {isSubmitting ? "กำลังเพิ่ม..." : "เพิ่มอาจารย์"}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>ชื่อ-นามสกุล</TableHead>
+                      <TableHead>อีเมล</TableHead>
+                      <TableHead>กลุ่มที่รับผิดชอบ</TableHead>
+                      <TableHead>สถานะ</TableHead>
+                      <TableHead>จัดการ</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {teachers.map((teacher) => {
+                      const assignments = teacherAssignments.filter(ta => ta.teacher_id === teacher.id);
+                      return (
+                        <TableRow key={teacher.id}>
+                          <TableCell className="font-medium">
+                            {teacher.first_name} {teacher.last_name}
+                          </TableCell>
+                          <TableCell>{teacher.email}</TableCell>
+                          <TableCell>
+                            {assignments.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {assignments.map((assignment: any) => (
+                                  <Badge key={assignment.id} variant="outline">
+                                    {assignment.student_groups?.name}
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground">ไม่มีกลุ่ม</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {teacher.is_locked ? (
+                              <Badge variant="destructive">ล็อก</Badge>
+                            ) : (
+                              <Badge variant="secondary">ปกติ</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openEditTeacherDialog(teacher)}
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleToggleLock(teacher.id, !teacher.is_locked)}
+                              >
+                                {teacher.is_locked ? (
+                                  <Unlock className="w-4 h-4" />
+                                ) : (
+                                  <Lock className="w-4 h-4" />
+                                )}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleSendResetPassword(teacher.email)}
+                              >
+                                รีเซ็ต
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => handleDeleteTeacher(teacher.id, `${teacher.first_name} ${teacher.last_name}`)}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Groups Tab */}
+          <TabsContent value="groups" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>จัดการกลุ่มนักศึกษา</CardTitle>
+                    <CardDescription>เพิ่ม แก้ไข หรือลบกลุ่ม</CardDescription>
+                  </div>
+                  <Dialog open={isAddGroupOpen} onOpenChange={setIsAddGroupOpen}>
+                    <DialogTrigger asChild>
+                      <Button>
+                        <UserPlus className="w-4 h-4 mr-2" />
+                        เพิ่มกลุ่ม
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>เพิ่มกลุ่มใหม่</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div>
+                          <Label htmlFor="group-name">ชื่อกลุ่ม</Label>
+                          <Input
+                            id="group-name"
+                            value={newGroup.name}
+                            onChange={(e) => setNewGroup({ ...newGroup, name: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="group-major">สาขาวิชา</Label>
+                          <Input
+                            id="group-major"
+                            value={newGroup.major}
+                            onChange={(e) => setNewGroup({ ...newGroup, major: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="group-year">ปีการศึกษา</Label>
+                          <Input
+                            id="group-year"
+                            value={newGroup.yearLevel}
+                            onChange={(e) => setNewGroup({ ...newGroup, yearLevel: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button onClick={handleAddGroup} disabled={isSubmitting}>
+                          {isSubmitting ? "กำลังเพิ่ม..." : "เพิ่มกลุ่ม"}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>ชื่อกลุ่ม</TableHead>
+                      <TableHead>สาขาวิชา</TableHead>
+                      <TableHead>ปีการศึกษา</TableHead>
+                      <TableHead>จำนวนสมาชิก</TableHead>
+                      <TableHead>จัดการ</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {groups.map((group) => {
+                      const memberCount = groupMembers.filter(m => m.group_id === group.id).length;
+                      return (
+                        <TableRow key={group.id}>
+                          <TableCell className="font-medium">{group.name}</TableCell>
+                          <TableCell>{group.major}</TableCell>
+                          <TableCell>{group.year_level}</TableCell>
+                          <TableCell>{memberCount} คน</TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openEditGroupDialog(group)}
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => handleDeleteGroup(group.id, group.name)}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* LINE Broadcast Tab */}
+          <TabsContent value="line" className="space-y-4">
+            <LINENotificationSender userId={user?.id || ""} role="super_admin" />
+            
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>จัดการ LINE Channels</CardTitle>
+                    <CardDescription>เพิ่ม แก้ไข หรือลบ LINE Channel</CardDescription>
+                  </div>
+                  <Dialog open={isAddLineChannelOpen} onOpenChange={setIsAddLineChannelOpen}>
+                    <DialogTrigger asChild>
+                      <Button>
+                        <MessageCircle className="w-4 h-4 mr-2" />
+                        เพิ่ม Channel
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-2xl">
+                      <DialogHeader>
+                        <DialogTitle>เพิ่ม LINE Channel ใหม่</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div>
+                          <Label htmlFor="channel-name">ชื่อ Channel</Label>
+                          <Input
+                            id="channel-name"
+                            value={newLineChannel.name}
+                            onChange={(e) => setNewLineChannel({ ...newLineChannel, name: e.target.value })}
+                            placeholder="เช่น: ช่องทางแจ้งเตือนนักศึกษา"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="channel-description">คำอธิบาย</Label>
+                          <Textarea
+                            id="channel-description"
+                            value={newLineChannel.description}
+                            onChange={(e) => setNewLineChannel({ ...newLineChannel, description: e.target.value })}
+                            placeholder="คำอธิบายเกี่ยวกับ Channel นี้"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="channel-type">ประเภท</Label>
+                          <Select
+                            value={newLineChannel.notificationType}
+                            onValueChange={(value: "group" | "broadcast") => 
+                              setNewLineChannel({ ...newLineChannel, notificationType: value })
+                            }
+                          >
+                            <SelectTrigger id="channel-type">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="broadcast">Broadcast (ส่งถึงทุกคน)</SelectItem>
+                              <SelectItem value="group">Group (ส่งถึงกลุ่มเฉพาะ)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {newLineChannel.notificationType === "group" && (
+                          <div>
+                            <Label htmlFor="channel-group-id">Group ID</Label>
                             <Input
-                              id="secret"
-                              placeholder="Channel Secret จาก LINE Developers"
-                              value={newLineChannel.channelSecret}
-                              onChange={(e) => setNewLineChannel({ ...newLineChannel, channelSecret: e.target.value })}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="groupId">Group ID (ถ้ามี)</Label>
-                            <Input
-                              id="groupId"
-                              placeholder="Group ID สำหรับส่งข้อความ (optional)"
+                              id="channel-group-id"
                               value={newLineChannel.groupId}
                               onChange={(e) => setNewLineChannel({ ...newLineChannel, groupId: e.target.value })}
+                              placeholder="LINE Group ID"
                             />
                           </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="notificationType">ประเภทการแจ้งเตือน</Label>
-                            <Select
-                              value={newLineChannel.notificationType}
-                              onValueChange={(value) =>
-                                setNewLineChannel({ ...newLineChannel, notificationType: value })
-                              }
-                            >
-                              <SelectTrigger id="notificationType">
-                                <SelectValue placeholder="เลือกประเภท" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="group">Group Message</SelectItem>
-                                <SelectItem value="broadcast">Broadcast Message</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
+                        )}
+                        <div>
+                          <Label htmlFor="channel-token">Channel Access Token</Label>
+                          <Textarea
+                            id="channel-token"
+                            value={newLineChannel.channelAccessToken}
+                            onChange={(e) => setNewLineChannel({ ...newLineChannel, channelAccessToken: e.target.value })}
+                            placeholder="จาก LINE Developers Console"
+                            rows={3}
+                          />
                         </div>
-                        <DialogFooter>
-                          <Button
-                            variant="outline"
-                            onClick={() => setIsAddLineChannelOpen(false)}
-                            disabled={isSubmitting}
-                          >
-                            ยกเลิก
-                          </Button>
-                          <Button onClick={handleAddLineChannel} disabled={isSubmitting}>
-                            {isSubmitting ? (
-                              <>
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                กำลังเพิ่ม...
-                              </>
-                            ) : (
-                              "เพิ่ม Channel"
-                            )}
-                          </Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  {lineChannels.length === 0 ? (
-                    <Alert>
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription>
-                        ยังไม่มี LINE Channel ในระบบ คลิก "เพิ่ม Channel" เพื่อเริ่มต้น
-                      </AlertDescription>
-                    </Alert>
-                  ) : (
-                    <div className="rounded-md border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-muted/50">
-                            <TableHead>ชื่อ</TableHead>
-                            <TableHead>คำอธิบาย</TableHead>
-                            <TableHead>ประเภท</TableHead>
-                            <TableHead>สถานะ</TableHead>
-                            <TableHead className="text-right">ดำเนินการ</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {lineChannels.map((channel: any) => (
-                            <TableRow key={channel.id} className="hover:bg-muted/50 transition-colors">
-                              <TableCell className="font-medium">{channel.name}</TableCell>
-                              <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
-                                {channel.description || "-"}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline">
-                                  {channel.notification_type === "group"
-                                    ? "Group"
-                                    : channel.notification_type === "broadcast"
-                                      ? "Broadcast"
-                                      : "-"}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleToggleLineChannel(channel.id, !channel.enabled)}
-                                  className={cn(
-                                    "transition-colors",
-                                    channel.enabled
-                                      ? "text-green-600 hover:text-green-700"
-                                      : "text-red-600 hover:text-red-700",
-                                  )}
-                                >
-                                  {channel.enabled ? (
-                                    <>
-                                      <CheckCircle2 className="w-4 h-4 mr-1" />
-                                      เปิด
-                                    </>
-                                  ) : (
-                                    <>
-                                      <XCircle className="w-4 h-4 mr-1" />
-                                      ปิด
-                                    </>
-                                  )}
-                                </Button>
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => handleDeleteLineChannel(channel.id, channel.name)}
-                                      className="hover:bg-red-50 hover:text-red-600"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>ลบ Channel</TooltipContent>
-                                </Tooltip>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
+                        <div>
+                          <Label htmlFor="channel-secret">Channel Secret</Label>
+                          <Input
+                            id="channel-secret"
+                            value={newLineChannel.channelSecret}
+                            onChange={(e) => setNewLineChannel({ ...newLineChannel, channelSecret: e.target.value })}
+                            placeholder="จาก LINE Developers Console"
+                          />
+                        </div>
+                        <Alert>
+                          <AlertDescription>
+                            <strong>วิธีการใช้งาน:</strong>
+                            <ul className="list-disc list-inside mt-2 space-y-1 text-sm">
+                              <li>ไปที่ LINE Developers Console (developers.line.biz)</li>
+                              <li>สร้าง Messaging API channel</li>
+                              <li>คัดลอก Channel Access Token และ Channel Secret มาใส่</li>
+                              <li>สำหรับ Group Message ต้องเพิ่ม Bot เข้ากลุ่มและหา Group ID</li>
+                            </ul>
+                          </AlertDescription>
+                        </Alert>
+                      </div>
+                      <DialogFooter>
+                        <Button onClick={handleAddLineChannel} disabled={isSubmitting}>
+                          {isSubmitting ? "กำลังเพิ่ม..." : "เพิ่ม Channel"}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>ชื่อ Channel</TableHead>
+                      <TableHead>คำอธิบาย</TableHead>
+                      <TableHead>ประเภท</TableHead>
+                      <TableHead>สถานะ</TableHead>
+                      <TableHead>จัดการ</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {lineChannels.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-muted-foreground">
+                          ยังไม่มี LINE Channel กรุณาเพิ่ม
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      lineChannels.map((channel) => (
+                        <TableRow key={channel.id}>
+                          <TableCell className="font-medium">{channel.name}</TableCell>
+                          <TableCell>{channel.description || "-"}</TableCell>
+                          <TableCell>
+                            <Badge variant={channel.notification_type === "broadcast" ? "default" : "secondary"}>
+                              {channel.notification_type === "broadcast" ? "Broadcast" : "Group"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Switch
+                                checked={channel.enabled}
+                                onCheckedChange={(checked) => handleToggleLineChannel(channel.id, checked)}
+                              />
+                              <span className="text-sm">
+                                {channel.enabled ? "เปิดใช้งาน" : "ปิดใช้งาน"}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openEditLineChannelDialog(channel)}
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => handleDeleteLineChannel(channel.id, channel.name)}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-            <TabsContent value="settings" className="space-y-4 animate-in fade-in duration-300">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Settings className="w-5 h-5" />
-                    ตั้งค่าระบบ
-                  </CardTitle>
-                  <CardDescription>กำหนดค่าต่างๆ ของระบบ</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="minSessions" className="text-base">
-                        จำนวนครั้งขั้นต่ำสำหรับ Coaching
-                      </Label>
-                      <Input
-                        id="minSessions"
-                        type="number"
-                        min="1"
-                        value={minSessions}
-                        onChange={(e) => setMinSessions(e.target.value)}
-                        className="max-w-xs"
-                      />
-                      <p className="text-sm text-muted-foreground">
-                        กำหนดจำนวนครั้งขั้นต่ำที่นักศึกษาต้องเข้าพบอาจารย์ที่ปรึกษา
-                      </p>
-                    </div>
-                    <Button onClick={updateSettings} className="w-full md:w-auto">
-                      <CheckCircle2 className="w-4 h-4 mr-2" />
-                      บันทึกการตั้งค่า
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
+          {/* Settings Tab */}
+          <TabsContent value="settings" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Settings className="w-5 h-5" />
+                  ตั้งค่าระบบ
+                </CardTitle>
+                <CardDescription>จัดการการตั้งค่าต่างๆ ของระบบ</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Alert>
+                  <AlertDescription>
+                    ส่วนตั้งค่าเพิ่มเติมจะถูกเพิ่มในอนาคต
+                  </AlertDescription>
+                </Alert>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
 
-          {/* Delete Confirmation Dialog */}
-          <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-red-600">
-                  <AlertCircle className="w-5 h-5" />
-                  ยืนยันการลบ
-                </DialogTitle>
-                <DialogDescription>การดำเนินการนี้ไม่สามารถย้อนกลับได้</DialogDescription>
-              </DialogHeader>
-              <div className="py-4">
-                <p className="text-sm">
-                  คุณแน่ใจหรือไม่ที่จะลบ{" "}
-                  {itemToDelete?.type === "user" ? "ผู้ใช้" : itemToDelete?.type === "group" ? "กลุ่ม" : "LINE Channel"}{" "}
-                  <span className="font-semibold">{itemToDelete?.name}</span>?
-                </p>
+        {/* Edit Teacher Dialog */}
+        <Dialog open={isEditTeacherOpen} onOpenChange={setIsEditTeacherOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>แก้ไขข้อมูลอาจารย์</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="edit-teacher-firstname">ชื่อ</Label>
+                <Input
+                  id="edit-teacher-firstname"
+                  value={editTeacher.firstName}
+                  onChange={(e) => setEditTeacher({ ...editTeacher, firstName: e.target.value })}
+                />
               </div>
-              <DialogFooter>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setDeleteConfirmOpen(false);
-                    setItemToDelete(null);
+              <div>
+                <Label htmlFor="edit-teacher-lastname">นามสกุล</Label>
+                <Input
+                  id="edit-teacher-lastname"
+                  value={editTeacher.lastName}
+                  onChange={(e) => setEditTeacher({ ...editTeacher, lastName: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>กลุ่มที่รับผิดชอบ</Label>
+                <Select
+                  value={editTeacher.groupIds[0] || ""}
+                  onValueChange={(value) => {
+                    const currentIds = editTeacher.groupIds;
+                    if (currentIds.includes(value)) {
+                      setEditTeacher({ ...editTeacher, groupIds: currentIds.filter(id => id !== value) });
+                    } else {
+                      setEditTeacher({ ...editTeacher, groupIds: [...currentIds, value] });
+                    }
                   }}
                 >
-                  ยกเลิก
-                </Button>
-                <Button variant="destructive" onClick={handleDeleteConfirm}>
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  ลบ
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </TooltipProvider>
+                  <SelectTrigger>
+                    <SelectValue placeholder="เลือกกลุ่ม" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {groups.map((group) => (
+                      <SelectItem key={group.id} value={group.id}>
+                        {group.name} - {group.major} ปี {group.year_level}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {editTeacher.groupIds.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {editTeacher.groupIds.map(id => {
+                      const group = groups.find(g => g.id === id);
+                      return group ? (
+                        <Badge key={id} variant="secondary">
+                          {group.name}
+                        </Badge>
+                      ) : null;
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={handleEditTeacherSubmit} disabled={isSubmitting}>
+                {isSubmitting ? "กำลังบันทึก..." : "บันทึก"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Group Dialog */}
+        <Dialog open={isEditGroupOpen} onOpenChange={setIsEditGroupOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>แก้ไขกลุ่ม</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="edit-group-name">ชื่อกลุ่ม</Label>
+                <Input
+                  id="edit-group-name"
+                  value={editGroup.name}
+                  onChange={(e) => setEditGroup({ ...editGroup, name: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-group-major">สาขาวิชา</Label>
+                <Input
+                  id="edit-group-major"
+                  value={editGroup.major}
+                  onChange={(e) => setEditGroup({ ...editGroup, major: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-group-year">ปีการศึกษา</Label>
+                <Input
+                  id="edit-group-year"
+                  value={editGroup.yearLevel}
+                  onChange={(e) => setEditGroup({ ...editGroup, yearLevel: e.target.value })}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={handleEditGroup} disabled={isSubmitting}>
+                {isSubmitting ? "กำลังบันทึก..." : "บันทึก"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit LINE Channel Dialog */}
+        <Dialog open={isEditLineChannelOpen} onOpenChange={setIsEditLineChannelOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>แก้ไข LINE Channel</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="edit-channel-name">ชื่อ Channel</Label>
+                <Input
+                  id="edit-channel-name"
+                  value={editLineChannel.name}
+                  onChange={(e) => setEditLineChannel({ ...editLineChannel, name: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-channel-description">คำอธิบาย</Label>
+                <Textarea
+                  id="edit-channel-description"
+                  value={editLineChannel.description}
+                  onChange={(e) => setEditLineChannel({ ...editLineChannel, description: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-channel-type">ประเภท</Label>
+                <Select
+                  value={editLineChannel.notificationType}
+                  onValueChange={(value: "group" | "broadcast") => 
+                    setEditLineChannel({ ...editLineChannel, notificationType: value })
+                  }
+                >
+                  <SelectTrigger id="edit-channel-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="broadcast">Broadcast</SelectItem>
+                    <SelectItem value="group">Group</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {editLineChannel.notificationType === "group" && (
+                <div>
+                  <Label htmlFor="edit-channel-group-id">Group ID</Label>
+                  <Input
+                    id="edit-channel-group-id"
+                    value={editLineChannel.groupId}
+                    onChange={(e) => setEditLineChannel({ ...editLineChannel, groupId: e.target.value })}
+                  />
+                </div>
+              )}
+              <div>
+                <Label htmlFor="edit-channel-token">Channel Access Token</Label>
+                <Textarea
+                  id="edit-channel-token"
+                  value={editLineChannel.channelAccessToken}
+                  onChange={(e) => setEditLineChannel({ ...editLineChannel, channelAccessToken: e.target.value })}
+                  rows={3}
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-channel-secret">Channel Secret</Label>
+                <Input
+                  id="edit-channel-secret"
+                  value={editLineChannel.channelSecret}
+                  onChange={(e) => setEditLineChannel({ ...editLineChannel, channelSecret: e.target.value })}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={handleEditLineChannel} disabled={isSubmitting}>
+                {isSubmitting ? "กำลังบันทึก..." : "บันทึก"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>ยืนยันการลบ</DialogTitle>
+            </DialogHeader>
+            <p>
+              คุณแน่ใจหรือไม่ที่จะลบ {itemToDelete?.name}?
+            </p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)}>
+                ยกเลิก
+              </Button>
+              <Button variant="destructive" onClick={handleDeleteConfirm}>
+                ลบ
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
     </DashboardLayout>
   );
 }

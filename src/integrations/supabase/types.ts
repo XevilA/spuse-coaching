@@ -625,6 +625,7 @@ export type Database = {
         Args: { appointment_id: string; student_id: string }
         Returns: boolean
       }
+      get_user_group_id: { Args: { user_id: string }; Returns: string }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

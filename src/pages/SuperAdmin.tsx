@@ -976,14 +976,40 @@ export default function SuperAdmin() {
                           </Select>
                         </div>
                         {newLineChannel.notificationType === "group" && (
-                          <div>
-                            <Label htmlFor="channel-group-id">Group ID</Label>
-                            <Input
-                              id="channel-group-id"
-                              value={newLineChannel.groupId}
-                              onChange={(e) => setNewLineChannel({ ...newLineChannel, groupId: e.target.value })}
-                              placeholder="LINE Group ID"
-                            />
+                          <div className="space-y-4">
+                            <div>
+                              <Label htmlFor="channel-student-group">เลือกกลุ่มนักศึกษา (ถ้าต้องการ)</Label>
+                              <Select
+                                value={newLineChannel.groupId}
+                                onValueChange={(value) => setNewLineChannel({ ...newLineChannel, groupId: value })}
+                              >
+                                <SelectTrigger id="channel-student-group">
+                                  <SelectValue placeholder="เลือกกลุ่มนักศึกษา หรือพิมพ์ LINE Group ID ด้านล่าง" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {groups.map((group) => (
+                                    <SelectItem key={group.id} value={group.id}>
+                                      {group.name} - {group.major} ({group.year_level})
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <p className="text-sm text-muted-foreground mt-1">
+                                เลือกกลุ่มนักศึกษาในระบบ หรือพิมพ์ LINE Group ID ด้านล่าง
+                              </p>
+                            </div>
+                            <div>
+                              <Label htmlFor="channel-group-id">หรือ พิมพ์ LINE Group ID</Label>
+                              <Input
+                                id="channel-group-id"
+                                value={newLineChannel.groupId}
+                                onChange={(e) => setNewLineChannel({ ...newLineChannel, groupId: e.target.value })}
+                                placeholder="เช่น: C1234567890abcdef1234567890abcdef"
+                              />
+                              <p className="text-sm text-muted-foreground mt-1">
+                                Group ID จาก LINE (เริ่มด้วย C)
+                              </p>
+                            </div>
                           </div>
                         )}
                         <div>
@@ -1263,13 +1289,40 @@ export default function SuperAdmin() {
                 </Select>
               </div>
               {editLineChannel.notificationType === "group" && (
-                <div>
-                  <Label htmlFor="edit-channel-group-id">Group ID</Label>
-                  <Input
-                    id="edit-channel-group-id"
-                    value={editLineChannel.groupId}
-                    onChange={(e) => setEditLineChannel({ ...editLineChannel, groupId: e.target.value })}
-                  />
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="edit-channel-student-group">เลือกกลุ่มนักศึกษา (ถ้าต้องการ)</Label>
+                    <Select
+                      value={editLineChannel.groupId}
+                      onValueChange={(value) => setEditLineChannel({ ...editLineChannel, groupId: value })}
+                    >
+                      <SelectTrigger id="edit-channel-student-group">
+                        <SelectValue placeholder="เลือกกลุ่มนักศึกษา หรือพิมพ์ LINE Group ID ด้านล่าง" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {groups.map((group) => (
+                          <SelectItem key={group.id} value={group.id}>
+                            {group.name} - {group.major} ({group.year_level})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      เลือกกลุ่มนักศึกษาในระบบ หรือพิมพ์ LINE Group ID ด้านล่าง
+                    </p>
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-channel-group-id">หรือ พิมพ์ LINE Group ID</Label>
+                    <Input
+                      id="edit-channel-group-id"
+                      value={editLineChannel.groupId}
+                      onChange={(e) => setEditLineChannel({ ...editLineChannel, groupId: e.target.value })}
+                      placeholder="เช่น: C1234567890abcdef1234567890abcdef"
+                    />
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Group ID จาก LINE (เริ่มด้วย C)
+                    </p>
+                  </div>
                 </div>
               )}
               <div>

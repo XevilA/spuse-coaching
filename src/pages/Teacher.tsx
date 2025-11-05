@@ -258,6 +258,44 @@ const Teacher = () => {
 
       if (error) throw error;
 
+      // Send LINE notification to student
+      try {
+        const session = sessions.find(s => s.id === sessionId);
+        if (session) {
+          const studentName = `${session.profiles?.first_name || ''} ${session.profiles?.last_name || ''}`.trim() || 'นักศึกษา';
+          const teacherName = `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || 'อาจารย์';
+          const statusText = action === "approved" ? "✅ อนุมัติแล้ว" : "❌ ปฏิเสธ";
+          
+          let notificationMessage = `📊 ผลการตรวจสอบงาน Coaching
+          
+👤 นักศึกษา: ${studentName}
+📝 ครั้งที่: ${session.session_number}
+👨‍🏫 อาจารย์: ${teacherName}
+📅 วันที่ตรวจ: ${new Date().toLocaleString('th-TH')}
+
+สถานะ: ${statusText}`;
+
+          if (action === "approved" && score !== undefined) {
+            notificationMessage += `\n🎯 คะแนน: ${score}/${session.max_score || 100}`;
+          }
+          
+          if (comment) {
+            notificationMessage += `\n💬 ความคิดเห็น: ${comment}`;
+          }
+
+          await supabase.functions.invoke("send-line-notification", {
+            body: {
+              message: notificationMessage,
+              notificationType: "broadcast"
+            },
+          });
+          console.log("LINE notification sent to student successfully");
+        }
+      } catch (notifError) {
+        console.error("Failed to send LINE notification:", notifError);
+        // Don't throw error, just log it - notification failure shouldn't block approval
+      }
+
       toast({
         title: "สำเร็จ",
         description: `${action === "approved" ? "อนุมัติ" : "ไม่อนุมัติ"}ใบ coaching แล้ว`,

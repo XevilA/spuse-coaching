@@ -245,6 +245,35 @@ export default function Student() {
 
       if (sessionError) throw sessionError;
 
+      // Send LINE notification to teacher
+      try {
+        const teacherInfo = availableTeachers.find(t => t.id === selectedTeacher);
+        const studentName = `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || 'นักศึกษา';
+        const submissionTypeText = submissionType === "group" ? "กลุ่ม" : "ส่วนตัว";
+        
+        const notificationMessage = `🎓 การส่งงาน Coaching ใหม่
+        
+📝 รายละเอียด:
+- นักศึกษา: ${studentName}${profile?.student_id ? ` (${profile.student_id})` : ''}
+- ประเภท: ${submissionTypeText}
+- ครั้งที่: ${sessionNumber}
+- อาจารย์: ${teacherInfo?.first_name || ''} ${teacherInfo?.last_name || ''}
+- วันที่ส่ง: ${new Date().toLocaleString('th-TH')}
+
+⏳ รอการตรวจสอบ`;
+
+        await supabase.functions.invoke("send-line-notification", {
+          body: {
+            message: notificationMessage,
+            notificationType: "broadcast"
+          },
+        });
+        console.log("LINE notification sent to teacher successfully");
+      } catch (notifError) {
+        console.error("Failed to send LINE notification:", notifError);
+        // Don't throw error, just log it - notification failure shouldn't block submission
+      }
+
       toast({
         title: "ส่งงานสำเร็จ",
         description: `ส่งใบ Coaching ${submissionType === "individual" ? "แบบส่วนตัว" : "แบบกลุ่ม"} สำเร็จแล้ว`,

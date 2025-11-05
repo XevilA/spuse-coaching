@@ -12,6 +12,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { GroupMemberManager } from "@/components/GroupMemberManager";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function Student() {
   const [user, setUser] = useState<any>(null);
@@ -26,6 +28,7 @@ export default function Student() {
   const [groups, setGroups] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isLeader, setIsLeader] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -69,11 +72,12 @@ export default function Student() {
 
   const fetchData = async (userId: string) => {
     try {
-      const [profileRes, sessionsRes, settingsRes, groupsRes] = await Promise.all([
+      const [profileRes, sessionsRes, settingsRes, groupsRes, leaderRes] = await Promise.all([
         supabase.from("profiles").select("*").eq("id", userId).single(),
         supabase.from("coaching_sessions").select("*").eq("student_id", userId).order("created_at", { ascending: false }),
         supabase.from("coaching_settings").select("*").eq("key", "min_sessions").single(),
         supabase.from("student_groups").select("*").order("name"),
+        supabase.from("group_members").select("is_leader").eq("student_id", userId).single(),
       ]);
 
       if (profileRes.data) {
@@ -83,6 +87,7 @@ export default function Student() {
       if (sessionsRes.data) setSessions(sessionsRes.data);
       if (settingsRes.data) setRequiredSessions(parseInt(settingsRes.data.value));
       if (groupsRes.data) setGroups(groupsRes.data);
+      if (leaderRes.data) setIsLeader(leaderRes.data.is_leader || false);
     } catch (error: any) {
       console.error("Error fetching data:", error);
       toast({
@@ -318,15 +323,26 @@ export default function Student() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg sm:text-xl">อัปโหลดใบ Coaching</CardTitle>
-            <CardDescription>
-              เลือกอาจารย์ที่ปรึกษาและอัปโหลดใบ Coaching
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {!isLeader && (
+          <Card className="border-yellow-200 bg-yellow-50">
+            <CardContent className="p-4">
+              <p className="text-sm text-yellow-800">
+                ⚠️ เฉพาะหัวหน้ากลุ่มเท่านั้นที่สามารถส่งใบ Coaching ได้
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {isLeader && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg sm:text-xl">อัปโหลดใบ Coaching</CardTitle>
+              <CardDescription>
+                คุณเป็นหัวหน้ากลุ่ม - เลือกอาจารย์ที่ปรึกษาและอัปโหลดใบ Coaching
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="teacher">
                   อาจารย์ที่ปรึกษา <span className="text-red-500">*</span>
@@ -401,13 +417,18 @@ export default function Student() {
               <Upload className="w-4 h-4 mr-2" />
               {isUploading ? "กำลังอัปโหลด..." : "อัปโหลด"}
             </Button>
-            {!selectedGroup && (
-              <p className="text-sm text-yellow-600">
-                💡 เลือกกลุ่มเรียนก่อนเพื่ออัปโหลดใบ Coaching
-              </p>
-            )}
-          </CardContent>
-        </Card>
+             {!selectedGroup && (
+               <p className="text-sm text-yellow-600">
+                 💡 เลือกกลุ่มเรียนก่อนเพื่ออัปโหลดใบ Coaching
+               </p>
+             )}
+           </CardContent>
+         </Card>
+        )}
+
+        {selectedGroup && isLeader && (
+          <GroupMemberManager userId={user?.id || ""} groupId={selectedGroup} />
+        )}
 
         <Card>
           <CardHeader>

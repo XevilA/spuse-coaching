@@ -57,6 +57,7 @@ const Teacher = () => {
   const [commentDialogOpen, setCommentDialogOpen] = useState(false);
   const [currentSession, setCurrentSession] = useState<any>(null);
   const [sessionComment, setSessionComment] = useState("");
+  const [sessionScore, setSessionScore] = useState<number>(100);
   const [groups, setGroups] = useState<any[]>([]);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const { toast } = useToast();
@@ -228,7 +229,7 @@ const Teacher = () => {
     }
   };
 
-  const handleApproveSession = async (sessionId: string, action: "approved" | "rejected", comment?: string) => {
+  const handleApproveSession = async (sessionId: string, action: "approved" | "rejected", comment?: string, score?: number) => {
     try {
       const updateData: any = {
         status: action,
@@ -238,6 +239,10 @@ const Teacher = () => {
 
       if (comment) {
         updateData.teacher_comment = comment;
+      }
+
+      if (action === "approved" && score !== undefined) {
+        updateData.score = score;
       }
 
       const { error } = await supabase.from("coaching_sessions").update(updateData).eq("id", sessionId);
@@ -976,6 +981,22 @@ const Teacher = () => {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3 sm:space-y-4 py-3 sm:py-4">
+              {currentSession?.status === "approved" && (
+                <div className="space-y-2">
+                  <Label htmlFor="score" className="text-xs sm:text-sm">
+                    คะแนน (เต็m {currentSession?.max_score || 100})
+                  </Label>
+                  <Input
+                    id="score"
+                    type="number"
+                    min="0"
+                    max={currentSession?.max_score || 100}
+                    value={sessionScore}
+                    onChange={(e) => setSessionScore(parseInt(e.target.value) || 0)}
+                    className="text-xs sm:text-sm"
+                  />
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="comment" className="text-xs sm:text-sm">
                   ความคิดเห็นของอาจารย์
@@ -1005,9 +1026,15 @@ const Teacher = () => {
               <Button
                 onClick={() => {
                   const action = currentSession?.status === "approved" ? "approved" : "rejected";
-                  handleApproveSession(currentSession?.id, action, sessionComment);
+                  handleApproveSession(
+                    currentSession?.id, 
+                    action, 
+                    sessionComment,
+                    action === "approved" ? sessionScore : undefined
+                  );
                   setCommentDialogOpen(false);
                   setSessionComment("");
+                  setSessionScore(100);
                   setCurrentSession(null);
                 }}
                 className={cn(

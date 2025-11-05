@@ -100,9 +100,11 @@ export type Database = {
           file_url: string
           group_id: string | null
           id: string
+          max_score: number | null
           notes: string | null
           ocr_data: Json | null
           reviewed_at: string | null
+          score: number | null
           session_number: number
           status: Database["public"]["Enums"]["coaching_status"] | null
           student_id: string
@@ -117,9 +119,11 @@ export type Database = {
           file_url: string
           group_id?: string | null
           id?: string
+          max_score?: number | null
           notes?: string | null
           ocr_data?: Json | null
           reviewed_at?: string | null
+          score?: number | null
           session_number: number
           status?: Database["public"]["Enums"]["coaching_status"] | null
           student_id: string
@@ -134,9 +138,11 @@ export type Database = {
           file_url?: string
           group_id?: string | null
           id?: string
+          max_score?: number | null
           notes?: string | null
           ocr_data?: Json | null
           reviewed_at?: string | null
+          score?: number | null
           session_number?: number
           status?: Database["public"]["Enums"]["coaching_status"] | null
           student_id?: string
@@ -255,18 +261,21 @@ export type Database = {
           created_at: string | null
           group_id: string
           id: string
+          is_leader: boolean | null
           student_id: string
         }
         Insert: {
           created_at?: string | null
           group_id: string
           id?: string
+          is_leader?: boolean | null
           student_id: string
         }
         Update: {
           created_at?: string | null
           group_id?: string
           id?: string
+          is_leader?: boolean | null
           student_id?: string
         }
         Relationships: [

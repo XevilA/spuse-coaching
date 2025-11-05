@@ -431,6 +431,7 @@ export type Database = {
           first_name: string
           group_id: string | null
           id: string
+          is_locked: boolean
           last_name: string
           major: string | null
           required_sessions: number | null
@@ -445,6 +446,7 @@ export type Database = {
           first_name: string
           group_id?: string | null
           id: string
+          is_locked?: boolean
           last_name: string
           major?: string | null
           required_sessions?: number | null
@@ -459,6 +461,7 @@ export type Database = {
           first_name?: string
           group_id?: string | null
           id?: string
+          is_locked?: boolean
           last_name?: string
           major?: string | null
           required_sessions?: number | null
@@ -637,6 +640,7 @@ export type Database = {
         Args: { _group_id: string; _user_id: string }
         Returns: boolean
       }
+      is_user_locked: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
       app_role: "student" | "teacher" | "admin" | "super_admin"

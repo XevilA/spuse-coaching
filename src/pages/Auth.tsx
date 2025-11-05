@@ -139,6 +139,28 @@ export default function Auth() {
     }
   };
 
+  const handleForgotPassword = async () => {
+    try {
+      const identifier = loginData.identifier.trim();
+      if (!identifier) throw new Error("กรุณากรอกอีเมลหรือรหัสนักศึกษา/รหัสพนักงานก่อน");
+      let email = identifier;
+      if (!identifier.includes("@")) {
+        const { data: profileData, error: profileError } = await supabase
+          .from("profiles")
+          .select("email")
+          .or(`student_id.eq.${identifier},employee_id.eq.${identifier}`)
+          .single();
+        if (profileError || !profileData) throw new Error("ไม่พบข้อมูลในระบบ กรุณาตรวจสอบอีกครั้ง");
+        email = profileData.email;
+      }
+      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/` });
+      if (error) throw error;
+      toast({ title: "ส่งลิงก์รีเซ็ตรหัสผ่านแล้ว", description: `กรุณาตรวจสอบอีเมล ${email}` });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "ไม่สามารถส่งลิงก์รีเซ็ตได้", description: err.message });
+    }
+  };
+
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -275,6 +297,9 @@ export default function Auth() {
             <Button type="submit" className="w-full apple-button-primary animate-stagger-5" disabled={isLoading}>
               {isLoading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
             </Button>
+            <div className="flex justify-end pt-2">
+              <Button type="button" variant="link" onClick={handleForgotPassword}>ลืมรหัสผ่าน?</Button>
+            </div>
           </form>
         </TabsContent>
 

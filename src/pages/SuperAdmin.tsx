@@ -40,7 +40,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AppointmentCalendar } from "@/components/AppointmentCalendar";
 import { Textarea } from "@/components/ui/textarea";
-import { DashboardStats } from "@/components/DashboardStats";
+
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -619,6 +619,27 @@ export default function SuperAdmin() {
     }
   };
 
+  const handleToggleLock = async (teacherId: string, nextLocked: boolean) => {
+    try {
+      const { error } = await supabase.from("profiles").update({ is_locked: nextLocked }).eq("id", teacherId);
+      if (error) throw error;
+      toast({ title: nextLocked ? "ล็อกผู้ใช้แล้ว" : "ปลดล็อกผู้ใช้แล้ว" });
+      if (user) fetchData(user.id);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "เกิดข้อผิดพลาด", description: error.message });
+    }
+  };
+
+  const handleSendResetPassword = async (email: string) => {
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/` });
+      if (error) throw error;
+      toast({ title: "ส่งลิงก์รีเซ็ตรหัสผ่านแล้ว", description: `ไปที่ ${email}` });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "ส่งลิงก์รีเซ็ตไม่สำเร็จ", description: error.message });
+    }
+  };
+
   // FIXED: Improved teacher assignment with validation
   const handleAssignTeacher = async (groupId: string, teacherId: string) => {
     if (!teacherId) {
@@ -927,12 +948,6 @@ export default function SuperAdmin() {
           <Tabs defaultValue="dashboard" className="w-full">
             <TabsList className="grid w-full grid-cols-5 h-auto p-1">
               <TabsTrigger
-                value="dashboard"
-                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-              >
-                Dashboard
-              </TabsTrigger>
-              <TabsTrigger
                 value="teachers"
                 className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
               >
@@ -958,9 +973,6 @@ export default function SuperAdmin() {
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="dashboard" className="space-y-4 animate-in fade-in duration-300">
-              <DashboardStats stats={dashboardStats} />
-            </TabsContent>
 
             <TabsContent value="teachers" className="space-y-4 animate-in fade-in duration-300">
               <Card>
@@ -1201,6 +1213,25 @@ export default function SuperAdmin() {
                                     <TooltipContent>แก้ไขข้อมูล</TooltipContent>
                                   </Tooltip>
                                 </TooltipProvider>
+
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleToggleLock(teacher.id, !teacher.is_locked)}
+                                  className={teacher.is_locked ? "text-amber-600 hover:bg-amber-50" : "hover:bg-amber-50"}
+                                >
+                                  {teacher.is_locked ? "ปลดล็อก" : "ล็อก"}
+                                </Button>
+
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleSendResetPassword(teacher.email)}
+                                  className="hover:bg-slate-50"
+                                >
+                                  รีเซ็ตรหัสผ่าน
+                                </Button>
+
                                 <TooltipProvider>
                                   <Tooltip>
                                     <TooltipTrigger asChild>

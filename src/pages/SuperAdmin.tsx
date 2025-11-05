@@ -118,7 +118,7 @@ export default function SuperAdmin() {
     if (!user) return;
     
     const channel = supabase
-      .channel("superadmin-realtime")
+      .channel("superadmin-realtime-all")
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => {
         if (user?.id) fetchData(user.id);
       })
@@ -135,6 +135,21 @@ export default function SuperAdmin() {
         if (user?.id) fetchData(user.id);
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "coaching_sessions" }, () => {
+        if (user?.id) fetchData(user.id);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "appointments" }, () => {
+        if (user?.id) fetchData(user.id);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "leave_requests" }, () => {
+        if (user?.id) fetchData(user.id);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "room_bookings" }, () => {
+        if (user?.id) fetchData(user.id);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "event_requests" }, () => {
+        if (user?.id) fetchData(user.id);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "line_notifications" }, () => {
         if (user?.id) fetchData(user.id);
       })
       .subscribe();

@@ -10,16 +10,18 @@ import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
 
 const loginSchema = z.object({
-  email: z.string().email("อีเมลไม่ถูกต้อง"),
+  identifier: z.string().min(1, "กรุณากรอกอีเมลหรือรหัสนักศึกษา/รหัสพนักงาน"),
   password: z.string().min(6, "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร"),
 });
 
-const registerSchema = loginSchema.extend({
+const registerSchema = z.object({
+  email: z.string().email("อีเมลไม่ถูกต้อง"),
+  password: z.string().min(6, "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร"),
+  confirmPassword: z.string(),
   firstName: z.string().min(1, "กรุณากรอกชื่อ"),
   lastName: z.string().min(1, "กรุณากรอกนามสกุล"),
   studentId: z.string().optional(),
   groupId: z.string().optional(),
-  confirmPassword: z.string(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "รหัสผ่านไม่ตรงกัน",
   path: ["confirmPassword"],
@@ -30,7 +32,7 @@ export default function Auth() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const [loginData, setLoginData] = useState({ email: "", password: "" });
+  const [loginData, setLoginData] = useState({ identifier: "", password: "" });
   const [registerData, setRegisterData] = useState({
     email: "",
     password: "",
@@ -80,8 +82,26 @@ export default function Auth() {
     try {
       loginSchema.parse(loginData);
 
+      let email = loginData.identifier;
+
+      // Check if identifier is student_id or employee_id
+      if (!loginData.identifier.includes("@")) {
+        // Look up email by student_id or employee_id
+        const { data: profileData, error: profileError } = await supabase
+          .from("profiles")
+          .select("email")
+          .or(`student_id.eq.${loginData.identifier},employee_id.eq.${loginData.identifier}`)
+          .single();
+
+        if (profileError || !profileData) {
+          throw new Error("ไม่พบรหัสนักศึกษา/รหัสพนักงานในระบบ");
+        }
+
+        email = profileData.email;
+      }
+
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: loginData.email,
+        email: email,
         password: loginData.password,
       });
 
@@ -112,7 +132,7 @@ export default function Auth() {
       toast({
         variant: "destructive",
         title: "ไม่สามารถเข้าสู่ระบบได้",
-        description: error.message || "กรุณาตรวจสอบอีเมลและรหัสผ่าน",
+        description: error.message || "กรุณาตรวจสอบข้อมูลและรหัสผ่าน",
       });
     } finally {
       setIsLoading(false);
@@ -167,7 +187,7 @@ export default function Auth() {
       });
 
       // Switch to login tab
-      setLoginData({ email: registerData.email, password: "" });
+      setLoginData({ identifier: registerData.email, password: "" });
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -227,16 +247,19 @@ export default function Auth() {
             </div>
 
             <div className="space-y-2 animate-stagger-3">
-              <Label htmlFor="login-email" className="text-sm font-medium">อีเมล</Label>
+              <Label htmlFor="login-identifier" className="text-sm font-medium">อีเมล / รหัสนักศึกษา / รหัสพนักงาน</Label>
               <Input
-                id="login-email"
-                type="email"
-                placeholder="example@spumail.net"
-                value={loginData.email}
-                onChange={(e) => setLoginData({ ...loginData, email: e.target.value })}
+                id="login-identifier"
+                type="text"
+                placeholder="example@spumail.net หรือ 66130500xxx"
+                value={loginData.identifier}
+                onChange={(e) => setLoginData({ ...loginData, identifier: e.target.value })}
                 className="apple-input"
                 required
               />
+              <p className="text-xs text-muted-foreground/80">
+                สามารถใช้อีเมล, รหัสนักศึกษา หรือรหัสพนักงานในการเข้าสู่ระบบ
+              </p>
             </div>
             <div className="space-y-2 animate-stagger-4">
               <Label htmlFor="login-password" className="text-sm font-medium">รหัสผ่าน</Label>

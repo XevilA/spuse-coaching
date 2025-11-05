@@ -40,15 +40,22 @@ export default function Student() {
   useEffect(() => {
     if (!user) return;
     const channel = supabase
-      .channel("student-changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "coaching_sessions" }, () => {
+      .channel("student-realtime-all")
+      .on("postgres_changes", { event: "*", schema: "public", table: "coaching_sessions", filter: `student_id=eq.${user.id}` }, () => {
         if (user?.id) fetchData(user.id);
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles", filter: `id=eq.${user.id}` }, () => {
         if (user?.id) fetchData(user.id);
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "student_groups" }, () => {
         if (user?.id) fetchData(user.id);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "group_members", filter: `student_id=eq.${user.id}` }, () => {
+        if (user?.id) fetchData(user.id);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "user_roles" }, async () => {
+        // Refetch teachers when user_roles changes
+        await fetchTeachers();
       })
       .subscribe();
     return () => {
@@ -90,7 +97,7 @@ export default function Student() {
       if (groupsRes.data) setGroups(groupsRes.data);
       if (leaderRes.data) setIsLeader(leaderRes.data.is_leader || false);
 
-      // Fetch available teachers
+      // Fetch available teachers - CRITICAL
       await fetchTeachers();
     } catch (error: any) {
       console.error("Error fetching data:", error);

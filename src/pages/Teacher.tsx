@@ -71,7 +71,7 @@ const Teacher = () => {
     if (!user) return;
 
     const channel = supabase
-      .channel("teacher-changes")
+      .channel("teacher-realtime-all")
       .on("postgres_changes", { event: "*", schema: "public", table: "coaching_sessions" }, () => {
         if (user?.id) fetchData(user.id);
       })
@@ -91,6 +91,15 @@ const Teacher = () => {
         if (user?.id) fetchData(user.id);
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "student_groups" }, () => {
+        if (user?.id) fetchData(user.id);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "group_members" }, () => {
+        if (user?.id) fetchData(user.id);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "user_roles" }, () => {
+        if (user?.id) fetchData(user.id);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "appointments" }, () => {
         if (user?.id) fetchData(user.id);
       })
       .subscribe();

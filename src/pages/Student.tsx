@@ -610,12 +610,16 @@ export default function Student() {
         session_number: sessionNum,
         file_url: uploadData.path,
         file_name: sanitizeInput(file.name),
-        status: "pending",
+        status: "pending" as const,
       };
 
       console.log("💾 Inserting session:", sessionData);
 
-      const { error: sessionError } = await supabase.from("coaching_sessions").insert(sessionData);
+      const { data: insertedSession, error: sessionError } = await supabase
+        .from("coaching_sessions")
+        .insert([sessionData])
+        .select()
+        .single();
 
       if (sessionError) {
         console.error("Session insert error:", sessionError);
@@ -627,6 +631,25 @@ export default function Student() {
       }
 
       console.log("✅ Session created successfully");
+
+      // Send LINE notification to teacher
+      if (insertedSession && selectedTeacher) {
+        try {
+          const teacherProfile = availableTeachers.find((t) => t.id === selectedTeacher);
+          const studentName = `${user?.email}`;
+
+          await supabase.functions.invoke("send-line-notification", {
+            body: {
+              teacherId: selectedTeacher,
+              message: `📝 นักศึกษา ${studentName} ส่งใบ Coaching ครั้งที่ ${sessionNum}\n${submissionType === "group" ? "แบบกลุ่ม" : "แบบส่วนตัว"}\nรอการตรวจสอบจากอาจารย์ ${teacherProfile?.first_name} ${teacherProfile?.last_name}`,
+              notificationType: "coaching_submission",
+            },
+          });
+        } catch (notifError) {
+          console.error("LINE notification error:", notifError);
+          // Don't throw error, just log it
+        }
+      }
 
       if (mountedRef.current) {
         toast({

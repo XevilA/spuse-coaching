@@ -633,6 +633,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_group_leader: {
+        Args: { _group_id: string; _user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       app_role: "student" | "teacher" | "admin" | "super_admin"

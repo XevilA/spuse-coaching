@@ -9,6 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { UserPlus } from "lucide-react";
 
 const UserManagement = () => {
@@ -23,6 +26,15 @@ const UserManagement = () => {
     employee_id: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [users, setUsers] = useState<any[]>([]);
+  const [groups, setGroups] = useState<any[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [selectedTeacherId, setSelectedTeacherId] = useState<string>("");
+  const [selectedTeacherName, setSelectedTeacherName] = useState<string>("");
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+  const [isSavingAssignments, setIsSavingAssignments] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -125,6 +137,93 @@ const UserManagement = () => {
     }
   };
 
+  useEffect(() => {
+    if (user) {
+      fetchUsersAndGroups();
+    }
+  }, [user]);
+
+  const fetchUsersAndGroups = async () => {
+    try {
+      setLoadingUsers(true);
+      const [usersRes, groupsRes] = await Promise.all([
+        supabase.from("profiles").select("id, email, first_name, last_name, employee_id, user_roles (role)").order("first_name"),
+        supabase.from("student_groups").select("*").order("name"),
+      ]);
+      setUsers(usersRes.data || []);
+      setGroups(groupsRes.data || []);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "โหลดข้อมูลไม่สำเร็จ", description: error.message });
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const updateUserRole = async (userId: string, role: string) => {
+    try {
+      const { error } = await supabase.from("user_roles").update({ role: role as any }).eq("user_id", userId);
+      if (error) throw error;
+      toast({ title: "อัปเดตบทบาทสำเร็จ" });
+      fetchUsersAndGroups();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "อัปเดตบทบาทไม่สำเร็จ", description: error.message });
+    }
+  };
+
+  const openAssignDialog = async (u: any) => {
+    try {
+      setSelectedTeacherId(u.id);
+      setSelectedTeacherName(`${u.first_name || ""} ${u.last_name || ""}`.trim() || u.email);
+      // Prefetch assignments
+      const { data, error } = await supabase
+        .from("teacher_assignments")
+        .select("group_id")
+        .eq("teacher_id", u.id);
+      if (error) throw error;
+      setSelectedGroupIds((data || []).map((d: any) => d.group_id));
+      setAssignDialogOpen(true);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "โหลดข้อมูลกลุ่มไม่สำเร็จ", description: error.message });
+    }
+  };
+
+  const toggleGroupSelection = (groupId: string, checked: boolean | string) => {
+    setSelectedGroupIds((prev) => {
+      const isChecked = checked === true || checked === "indeterminate"; // treat string truthy as checked
+      if (isChecked) {
+        return prev.includes(groupId) ? prev : [...prev, groupId];
+      }
+      return prev.filter((id) => id !== groupId);
+    });
+  };
+
+  const saveTeacherAssignments = async () => {
+    if (!selectedTeacherId) return;
+    setIsSavingAssignments(true);
+    try {
+      // Clear existing
+      const { error: delErr } = await supabase
+        .from("teacher_assignments")
+        .delete()
+        .eq("teacher_id", selectedTeacherId);
+      if (delErr) throw delErr;
+
+      if (selectedGroupIds.length > 0) {
+        const rows = selectedGroupIds.map((gid) => ({ teacher_id: selectedTeacherId, group_id: gid }));
+        const { error: insErr } = await supabase.from("teacher_assignments").insert(rows);
+        if (insErr) throw insErr;
+      }
+
+      toast({ title: "บันทึกการมอบหมายอาจารย์สำเร็จ" });
+      setAssignDialogOpen(false);
+      fetchUsersAndGroups();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "บันทึกไม่สำเร็จ", description: error.message });
+    } finally {
+      setIsSavingAssignments(false);
+    }
+  };
+
   if (loading) {
     return <div>Loading...</div>;
   }
@@ -220,8 +319,95 @@ const UserManagement = () => {
               </TabsContent>
 
               <TabsContent value="manage">
-                <div className="text-center py-8 text-muted-foreground">
-                  <p>ฟีเจอร์จัดการผู้ใช้จะเพิ่มในเร็วๆ นี้</p>
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      placeholder="ค้นหาชื่อหรืออีเมล..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                  </div>
+
+                  {loadingUsers ? (
+                    <div className="py-6 text-center text-muted-foreground">กำลังโหลด...</div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>ชื่อ</TableHead>
+                            <TableHead>อีเมล</TableHead>
+                            <TableHead>บทบาท</TableHead>
+                            <TableHead className="w-40">การจัดการ</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {users
+                            .filter((u) => {
+                              const q = searchTerm.toLowerCase();
+                              return (
+                                !q ||
+                                `${u.first_name || ""} ${u.last_name || ""}`.toLowerCase().includes(q) ||
+                                (u.email || "").toLowerCase().includes(q)
+                              );
+                            })
+                            .map((u) => {
+                              const role = u.user_roles?.[0]?.role || "";
+                              const fullName = `${u.first_name || ""} ${u.last_name || ""}`.trim();
+                              return (
+                                <TableRow key={u.id}>
+                                  <TableCell className="font-medium">{fullName || "-"}</TableCell>
+                                  <TableCell>{u.email}</TableCell>
+                                  <TableCell>
+                                    <Select value={role} onValueChange={(val) => updateUserRole(u.id, val)}>
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="เลือกบทบาท" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="teacher">อาจารย์</SelectItem>
+                                        <SelectItem value="admin">Admin/Staff</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </TableCell>
+                                  <TableCell>
+                                    {role === "teacher" ? (
+                                      <Button size="sm" onClick={() => openAssignDialog(u)} className="w-full">จัดการกลุ่ม</Button>
+                                    ) : (
+                                      <span className="text-muted-foreground">-</span>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+
+                  <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>มอบหมายกลุ่มให้: {selectedTeacherName}</DialogTitle>
+                      </DialogHeader>
+                      <div className="max-h-80 overflow-y-auto space-y-2 mt-2">
+                        {groups.map((g) => (
+                          <label key={g.id} className="flex items-center gap-3 py-1">
+                            <Checkbox
+                              checked={selectedGroupIds.includes(g.id)}
+                              onCheckedChange={(c) => toggleGroupSelection(g.id, c)}
+                            />
+                            <span>{g.name} • {g.major} • ปี {g.year_level}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <DialogFooter>
+                        <Button variant="secondary" onClick={() => setAssignDialogOpen(false)}>ยกเลิก</Button>
+                        <Button onClick={saveTeacherAssignments} disabled={isSavingAssignments}>
+                          {isSavingAssignments ? "กำลังบันทึก..." : "บันทึก"}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
                 </div>
               </TabsContent>
             </Tabs>

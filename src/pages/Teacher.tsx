@@ -6,7 +6,7 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { AppointmentCalendar } from "@/components/AppointmentCalendar";
 import { AppointmentManager } from "@/components/AppointmentManager";
 import { AIAssistant } from "@/components/AIAssistant";
-import { Footer } from "@/components/Footer";
+import { TeacherCoachingDashboard } from "@/components/TeacherCoachingDashboard";
 import { LINENotificationSender } from "@/components/LINENotificationSender";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -60,6 +60,8 @@ const Teacher = () => {
   const [sessionScore, setSessionScore] = useState<number>(100);
   const [groups, setGroups] = useState<any[]>([]);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [allSessions, setAllSessions] = useState<any[]>([]);
+  const [teacherAssignments, setTeacherAssignments] = useState<any[]>([]);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -214,8 +216,10 @@ const Teacher = () => {
       setRoomBookings(roomRes.data || []);
       setEventRequests(eventRes.data || []);
       setGroups(groupsRes.data || []);
+      setAllSessions(allSessionsRes.data || []);
 
       if (assignmentsRes.data) {
+        setTeacherAssignments(assignmentsRes.data);
         const groupIds = assignmentsRes.data.map((a) => a.group_id);
         const teacherSessions = (allSessionsRes.data || []).filter((s: any) => groupIds.includes(s.student?.group_id));
 
@@ -540,7 +544,15 @@ const Teacher = () => {
         <Tabs defaultValue="coaching" className="w-full">
           {/* Mobile: Scrollable Tab List */}
           <ScrollArea className="w-full whitespace-nowrap pb-2 md:pb-0">
-            <TabsList className="inline-flex w-auto md:grid md:w-full md:grid-cols-7 h-auto p-1 bg-muted/50">
+            <TabsList className="inline-flex w-auto md:grid md:w-full md:grid-cols-8 h-auto p-1 bg-muted/50">
+              <TabsTrigger
+                value="dashboard"
+                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-3 py-2 text-xs sm:text-sm"
+              >
+                <BookOpen className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                <span className="hidden sm:inline">Dashboard</span>
+                <span className="sm:hidden">📊</span>
+              </TabsTrigger>
               <TabsTrigger
                 value="coaching"
                 className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-3 py-2 text-xs sm:text-sm"
@@ -630,6 +642,19 @@ const Teacher = () => {
               </TabsTrigger>
             </TabsList>
           </ScrollArea>
+
+          {/* Dashboard Tab */}
+          <TabsContent value="dashboard" className="space-y-4 animate-in fade-in duration-300 mt-4">
+            <TeacherCoachingDashboard
+              groups={groups}
+              sessions={allSessions}
+              teacherAssignments={teacherAssignments}
+              teacherId={user?.id}
+              teacherProfile={profile}
+              onApprove={handleApproveSession}
+              onViewFile={viewFile}
+            />
+          </TabsContent>
 
           {/* Coaching Tab - Mobile Optimized */}
           <TabsContent value="coaching" className="space-y-3 sm:space-y-4 animate-in fade-in duration-300 mt-4">
@@ -1105,8 +1130,6 @@ const Teacher = () => {
       <div className="hidden md:block">
         <AIAssistant />
       </div>
-
-      <Footer />
     </DashboardLayout>
   );
 };

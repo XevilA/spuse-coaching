@@ -92,6 +92,42 @@ export type Database = {
         }
         Relationships: []
       }
+      automation_logs: {
+        Row: {
+          created_at: string | null
+          error_message: string | null
+          event_type: string
+          id: string
+          metadata: Json | null
+          notification_type: string | null
+          recipient_id: string | null
+          status: string | null
+          triggered_by: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          error_message?: string | null
+          event_type: string
+          id?: string
+          metadata?: Json | null
+          notification_type?: string | null
+          recipient_id?: string | null
+          status?: string | null
+          triggered_by?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          error_message?: string | null
+          event_type?: string
+          id?: string
+          metadata?: Json | null
+          notification_type?: string | null
+          recipient_id?: string | null
+          status?: string | null
+          triggered_by?: string | null
+        }
+        Relationships: []
+      }
       coaching_sessions: {
         Row: {
           analysis_data: Json | null
@@ -422,6 +458,47 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      notification_preferences: {
+        Row: {
+          created_at: string | null
+          enabled: boolean | null
+          event_type: string
+          id: string
+          line_channel_id: string | null
+          notification_type: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          enabled?: boolean | null
+          event_type: string
+          id?: string
+          line_channel_id?: string | null
+          notification_type: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          enabled?: boolean | null
+          event_type?: string
+          id?: string
+          line_channel_id?: string | null
+          notification_type?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_preferences_line_channel_id_fkey"
+            columns: ["line_channel_id"]
+            isOneToOne: false
+            referencedRelation: "line_notifications"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {

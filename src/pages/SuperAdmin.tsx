@@ -20,6 +20,7 @@ import { Switch } from "@/components/ui/switch";
 import { LINENotificationSender } from "@/components/LINENotificationSender";
 import * as XLSX from "xlsx";
 import { Checkbox } from "@/components/ui/checkbox";
+import { AutomationSettings } from "@/components/AutomationSettings";
 
 export default function SuperAdmin() {
   const [user, setUser] = useState<any>(null);
@@ -31,6 +32,7 @@ export default function SuperAdmin() {
   const [teacherAssignments, setTeacherAssignments] = useState<any[]>([]);
   const [groupMembers, setGroupMembers] = useState<any[]>([]);
   const [lineChannelAssignments, setLineChannelAssignments] = useState<any[]>([]);
+  const [automationLogs, setAutomationLogs] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
   // Dialog states
@@ -190,7 +192,7 @@ export default function SuperAdmin() {
 
   const fetchData = async (userId: string) => {
     try {
-      const [profileRes, usersRes, groupsRes, sessionsRes, lineChannelsRes, assignmentsRes, membersRes, lineAssignmentsRes] = await Promise.all([
+      const [profileRes, usersRes, groupsRes, sessionsRes, lineChannelsRes, assignmentsRes, membersRes, lineAssignmentsRes, logsRes] = await Promise.all([
         supabase.from("profiles").select("*").eq("id", userId).single(),
         supabase.from("profiles").select("*, user_roles(role)"),
         supabase.from("student_groups").select("*"),
@@ -203,6 +205,7 @@ export default function SuperAdmin() {
           profiles!line_channel_assignments_teacher_id_fkey(first_name, last_name, email),
           line_notifications!line_channel_assignments_line_notification_id_fkey(name)
         `),
+        supabase.from("automation_logs").select("*, profiles!automation_logs_recipient_id_fkey(first_name, last_name, email)").order("created_at", { ascending: false }).limit(100),
       ]);
 
       if (profileRes.data) setProfile(profileRes.data);
@@ -213,6 +216,7 @@ export default function SuperAdmin() {
       if (assignmentsRes.data) setTeacherAssignments(assignmentsRes.data);
       if (membersRes.data) setGroupMembers(membersRes.data);
       if (lineAssignmentsRes.data) setLineChannelAssignments(lineAssignmentsRes.data);
+      if (logsRes.data) setAutomationLogs(logsRes.data);
     } catch (error: any) {
       console.error("Error fetching data:", error);
       toast({
@@ -995,11 +999,12 @@ export default function SuperAdmin() {
         </div>
 
         <Tabs defaultValue="teachers" className="w-full">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="teachers">จัดการอาจารย์</TabsTrigger>
             <TabsTrigger value="students">จัดการนักศึกษา</TabsTrigger>
             <TabsTrigger value="groups">จัดการกลุ่ม</TabsTrigger>
             <TabsTrigger value="line">LINE Broadcast</TabsTrigger>
+            <TabsTrigger value="automation">Automation</TabsTrigger>
             <TabsTrigger value="settings">ตั้งค่า</TabsTrigger>
           </TabsList>
 
@@ -1956,6 +1961,89 @@ export default function SuperAdmin() {
                 </Table>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Automation Tab */}
+          <TabsContent value="automation" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Automation Logs</CardTitle>
+                <CardDescription>ประวัติการส่งการแจ้งเตือนอัตโนมัติ</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>เวลา</TableHead>
+                      <TableHead>เหตุการณ์</TableHead>
+                      <TableHead>ช่องทาง</TableHead>
+                      <TableHead>ผู้รับ</TableHead>
+                      <TableHead>สถานะ</TableHead>
+                      <TableHead>รายละเอียด</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {automationLogs.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground">
+                          ยังไม่มีการแจ้งเตือนอัตโนมัติ
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      automationLogs.map((log) => (
+                        <TableRow key={log.id}>
+                          <TableCell className="text-sm">
+                            {new Date(log.created_at).toLocaleString('th-TH')}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">
+                              {log.event_type === 'coaching_submitted' && '📝 ส่งใบ Coaching'}
+                              {log.event_type === 'coaching_reviewed' && '✅ ตรวจใบ Coaching'}
+                              {log.event_type === 'appointment_booked' && '📅 นัดหมาย'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={log.notification_type === 'line' ? 'default' : 'secondary'}>
+                              {log.notification_type === 'line' && '💬 LINE'}
+                              {log.notification_type === 'email' && '📧 Email'}
+                              {log.notification_type === 'both' && '💬📧 ทั้งสอง'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {log.profiles?.first_name} {log.profiles?.last_name}
+                            <div className="text-xs text-muted-foreground">{log.profiles?.email}</div>
+                          </TableCell>
+                          <TableCell>
+                            {log.status === 'sent' && <Badge className="bg-green-500">ส่งแล้ว</Badge>}
+                            {log.status === 'pending' && <Badge variant="secondary">รอส่ง</Badge>}
+                            {log.status === 'failed' && <Badge variant="destructive">ล้มเหลว</Badge>}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
+                            {log.metadata?.group_name && `กลุ่ม: ${log.metadata.group_name}`}
+                            {log.metadata?.session_number && ` | ครั้งที่: ${log.metadata.session_number}`}
+                            {log.error_message && (
+                              <div className="text-red-500 text-xs mt-1">{log.error_message}</div>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+
+            <Alert>
+              <AlertDescription>
+                <strong>วิธีใช้งาน Automation:</strong>
+                <ul className="list-disc list-inside mt-2 space-y-1">
+                  <li>อาจารย์สามารถตั้งค่าการแจ้งเตือนได้ที่หน้า Teacher Dashboard</li>
+                  <li>ระบบจะส่งการแจ้งเตือนอัตโนมัติเมื่อมีเหตุการณ์ที่กำหนดไว้</li>
+                  <li>สามารถเลือกรับแจ้งเตือนผ่าน LINE หรือ Email</li>
+                  <li>ต้องมอบหมาย LINE Channel ให้อาจารย์ก่อนที่จะสามารถรับแจ้งเตือนผ่าน LINE ได้</li>
+                </ul>
+              </AlertDescription>
+            </Alert>
           </TabsContent>
 
           {/* Settings Tab */}

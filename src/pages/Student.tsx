@@ -340,6 +340,32 @@ export default function Student() {
           setShowFirstTimeSetup(true);
         }
 
+        // Fetch required sessions from teacher assignment if available
+        if (profileRes.data?.group_id || leaderRes.data?.group_id) {
+          const groupId = profileRes.data?.group_id || leaderRes.data?.group_id;
+          const { data: assignmentData } = await supabase
+            .from("teacher_assignments")
+            .select("required_sessions")
+            .eq("group_id", groupId)
+            .maybeSingle();
+          
+          if (assignmentData && assignmentData.required_sessions) {
+            setRequiredSessions(assignmentData.required_sessions);
+          } else if (settingsRes.data) {
+            // Fallback to system default
+            const minSessions = parseInt(settingsRes.data.value);
+            if (!isNaN(minSessions) && minSessions > 0) {
+              setRequiredSessions(minSessions);
+            }
+          }
+        } else if (settingsRes.data) {
+          // Use system default if no group
+          const minSessions = parseInt(settingsRes.data.value);
+          if (!isNaN(minSessions) && minSessions > 0) {
+            setRequiredSessions(minSessions);
+          }
+        }
+
         // Fetch teachers
         await fetchTeachers();
       } catch (error: any) {

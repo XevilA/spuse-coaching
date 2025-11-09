@@ -52,8 +52,6 @@ const Teacher = () => {
   const [loading, setLoading] = useState(true);
   const [sessions, setSessions] = useState<any[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
-  const [roomBookings, setRoomBookings] = useState<any[]>([]);
-  const [eventRequests, setEventRequests] = useState<any[]>([]);
   const [commentDialogOpen, setCommentDialogOpen] = useState(false);
   const [currentSession, setCurrentSession] = useState<any>(null);
   const [sessionComment, setSessionComment] = useState("");
@@ -78,12 +76,6 @@ const Teacher = () => {
         if (user?.id) fetchData(user.id);
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "leave_requests" }, () => {
-        if (user?.id) fetchData(user.id);
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "room_bookings" }, () => {
-        if (user?.id) fetchData(user.id);
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "event_requests" }, () => {
         if (user?.id) fetchData(user.id);
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => {
@@ -175,50 +167,33 @@ const Teacher = () => {
       // Get pending sessions from teacher's groups only
       const pendingTeacherSessions = teacherSessions.filter((s: any) => s.status === "pending");
 
-      // Fetch other data
-      const [leaveRes, roomRes, eventRes, groupsRes] = await Promise.all([
-        supabase
-          .from("leave_requests")
-          .select(
-            `
-            *,
-            student:profiles!leave_requests_student_id_fkey(first_name, last_name, student_id)
-          `,
-          )
-          .eq("status", "pending")
-          .order("created_at", { ascending: false }),
+      // Fetch leave requests - filter to only show students in teacher's groups
+      const { data: allLeaveRequests } = await supabase
+        .from("leave_requests")
+        .select(
+          `
+          *,
+          student:profiles!leave_requests_student_id_fkey(first_name, last_name, student_id, group_id)
+        `,
+        )
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
 
-        supabase
-          .from("room_bookings")
-          .select(
-            `
-            *,
-            student:profiles!room_bookings_student_id_fkey(first_name, last_name, student_id)
-          `,
-          )
-          .eq("status", "pending")
-          .order("created_at", { ascending: false }),
+      // Filter leave requests to only show students from assigned groups
+      const teacherLeaveRequests = (allLeaveRequests || []).filter((lr: any) => 
+        assignedGroupIds.includes(lr.student?.group_id)
+      );
 
-        supabase
-          .from("event_requests")
-          .select(
-            `
-            *,
-            student:profiles!event_requests_student_id_fkey(first_name, last_name, student_id)
-          `,
-          )
-          .eq("status", "pending")
-          .order("created_at", { ascending: false }),
-        
-        supabase.from("student_groups").select("*").order("name"),
-      ]);
+      // Fetch groups
+      const { data: groupsData } = await supabase
+        .from("student_groups")
+        .select("*")
+        .order("name");
 
-      // Set only pending sessions from teacher's groups
+      // Set data
       setSessions(pendingTeacherSessions);
-      setLeaveRequests(leaveRes.data || []);
-      setRoomBookings(roomRes.data || []);
-      setEventRequests(eventRes.data || []);
-      setGroups(groupsRes.data || []);
+      setLeaveRequests(teacherLeaveRequests);
+      setGroups(groupsData || []);
       setAllSessions(teacherSessions); // All sessions from teacher's groups
       setTeacherAssignments(assignmentsData || []);
 
@@ -314,14 +289,13 @@ const Teacher = () => {
     }
   };
 
-  const handleReviewRequest = async (
-    table: "leave_requests" | "room_bookings" | "event_requests",
+  const handleReviewLeaveRequest = async (
     requestId: string,
     action: "approved" | "rejected",
   ) => {
     try {
       const { error } = await supabase
-        .from(table)
+        .from("leave_requests")
         .update({
           status: action,
           reviewed_by: user.id,
@@ -333,7 +307,7 @@ const Teacher = () => {
 
       toast({
         title: "สำเร็จ",
-        description: `${action === "approved" ? "อนุมัติ" : "ไม่อนุมัติ"}คำขอแล้ว`,
+        description: `${action === "approved" ? "อนุมัติ" : "ไม่อนุมัติ"}คำขอลาแล้ว`,
       });
 
       fetchData(user.id);
@@ -437,7 +411,7 @@ const Teacher = () => {
     );
   }
 
-  const pendingCount = sessions.length + leaveRequests.length + roomBookings.length + eventRequests.length;
+  const pendingCount = sessions.length + leaveRequests.length;
 
   return (
     <DashboardLayout role="teacher" userName={`${profile?.first_name || ""} ${profile?.last_name || ""}`}>
@@ -592,11 +566,11 @@ const Teacher = () => {
             </CardHeader>
             <CardContent className="p-3 pt-0 sm:p-4 sm:pt-0">
               <div className="text-xl sm:text-2xl md:text-3xl font-bold">
-                {leaveRequests.length + roomBookings.length + eventRequests.length}
+                {leaveRequests.length}
               </div>
               <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1">
-                <span className="hidden sm:inline">ลา+ห้อง+กิจกรรม</span>
-                <span className="sm:hidden">รายการ</span>
+                <span className="hidden sm:inline">คำขอลา</span>
+                <span className="sm:hidden">ลา</span>
               </p>
             </CardContent>
           </Card>
@@ -620,7 +594,7 @@ const Teacher = () => {
         <Tabs defaultValue="coaching" className="w-full">
           {/* Mobile: Scrollable Tab List */}
           <ScrollArea className="w-full whitespace-nowrap pb-2 md:pb-0">
-            <TabsList className="inline-flex w-auto md:grid md:w-full md:grid-cols-8 h-auto p-1 bg-muted/50">
+            <TabsList className="inline-flex w-auto md:grid md:w-full md:grid-cols-5 h-auto p-1 bg-muted/50">
               <TabsTrigger
                 value="dashboard"
                 className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-3 py-2 text-xs sm:text-sm"
@@ -676,45 +650,6 @@ const Teacher = () => {
                     {leaveRequests.length}
                   </Badge>
                 )}
-              </TabsTrigger>
-              <TabsTrigger
-                value="rooms"
-                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-3 py-2 text-xs sm:text-sm"
-              >
-                <UsersIcon className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                <span className="hidden sm:inline">จองห้อง</span>
-                <span className="sm:hidden">ห้อง</span>
-                {roomBookings.length > 0 && (
-                  <Badge
-                    variant="destructive"
-                    className="ml-1 sm:ml-2 h-4 w-4 sm:h-5 sm:w-5 p-0 text-[10px] flex items-center justify-center"
-                  >
-                    {roomBookings.length}
-                  </Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger
-                value="events"
-                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-3 py-2 text-xs sm:text-sm"
-              >
-                <CalendarIcon className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                <span className="hidden sm:inline">จัดงาน</span>
-                <span className="sm:hidden">งาน</span>
-                {eventRequests.length > 0 && (
-                  <Badge
-                    variant="destructive"
-                    className="ml-1 sm:ml-2 h-4 w-4 sm:h-5 sm:w-5 p-0 text-[10px] flex items-center justify-center"
-                  >
-                    {eventRequests.length}
-                  </Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger
-                value="line"
-                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-3 py-2 text-xs sm:text-sm"
-              >
-                <MessageCircle className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                LINE
               </TabsTrigger>
             </TabsList>
           </ScrollArea>
@@ -906,7 +841,7 @@ const Teacher = () => {
                             <Button
                               size="sm"
                               className="flex-1 bg-green-600 hover:bg-green-700 text-xs sm:text-sm h-8 sm:h-9"
-                              onClick={() => handleReviewRequest("leave_requests", request.id, "approved")}
+                              onClick={() => handleReviewLeaveRequest(request.id, "approved")}
                             >
                               <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
                               อนุมัติ
@@ -915,180 +850,7 @@ const Teacher = () => {
                               size="sm"
                               variant="destructive"
                               className="flex-1 text-xs sm:text-sm h-8 sm:h-9"
-                              onClick={() => handleReviewRequest("leave_requests", request.id, "rejected")}
-                            >
-                              <XCircle className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-                              ไม่อนุมัติ
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Room Bookings Tab - Mobile Optimized */}
-          <TabsContent value="rooms" className="space-y-3 sm:space-y-4 animate-in fade-in duration-300 mt-4">
-            <Card className="shadow-sm">
-              <CardHeader className="p-3 sm:p-4 md:p-6">
-                <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
-                  <UsersIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-                  คำขอจองห้อง
-                </CardTitle>
-                <CardDescription className="text-xs sm:text-sm">
-                  มีคำขอจองห้องรอตรวจสอบ {roomBookings.length} รายการ
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-3 sm:p-4 md:p-6">
-                <div className="space-y-3 sm:space-y-4">
-                  {roomBookings.length === 0 ? (
-                    <Alert className="border-green-200 bg-green-50">
-                      <CheckCircle className="h-4 w-4 text-green-500" />
-                      <AlertDescription className="text-xs sm:text-sm">ไม่มีคำขอจองห้อง</AlertDescription>
-                    </Alert>
-                  ) : (
-                    roomBookings.map((booking) => (
-                      <Card key={booking.id} className="border-2 hover:shadow-md transition-shadow">
-                        <CardContent className="p-3 sm:p-4 space-y-3">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1 min-w-0">
-                              <p className="font-semibold text-sm sm:text-base truncate">
-                                {booking.student?.first_name} {booking.student?.last_name}
-                              </p>
-                              <p className="text-xs sm:text-sm text-muted-foreground">{booking.room_name}</p>
-                            </div>
-                            <Badge
-                              variant="secondary"
-                              className="bg-orange-100 text-orange-700 text-[10px] sm:text-xs shrink-0"
-                            >
-                              <Clock className="w-3 h-3 mr-1" />
-                              รอ
-                            </Badge>
-                          </div>
-                          <div className="bg-muted/50 p-2 sm:p-3 rounded-lg space-y-1.5 sm:space-y-2">
-                            <p className="text-xs sm:text-sm">
-                              <strong>วันที่:</strong>{" "}
-                              {new Date(booking.booking_date).toLocaleDateString("th-TH", {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                              })}
-                            </p>
-                            <p className="text-xs sm:text-sm">
-                              <strong>เวลา:</strong> {booking.start_time} - {booking.end_time}
-                            </p>
-                            <p className="text-xs sm:text-sm">
-                              <strong>วัตถุประสงค์:</strong> {booking.purpose}
-                            </p>
-                          </div>
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              className="flex-1 bg-green-600 hover:bg-green-700 text-xs sm:text-sm h-8 sm:h-9"
-                              onClick={() => handleReviewRequest("room_bookings", booking.id, "approved")}
-                            >
-                              <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-                              อนุมัติ
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              className="flex-1 text-xs sm:text-sm h-8 sm:h-9"
-                              onClick={() => handleReviewRequest("room_bookings", booking.id, "rejected")}
-                            >
-                              <XCircle className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-                              ไม่อนุมัติ
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Events Tab - Mobile Optimized */}
-          <TabsContent value="events" className="space-y-3 sm:space-y-4 animate-in fade-in duration-300 mt-4">
-            <Card className="shadow-sm">
-              <CardHeader className="p-3 sm:p-4 md:p-6">
-                <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
-                  <CalendarIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-                  คำขอจัดกิจกรรม
-                </CardTitle>
-                <CardDescription className="text-xs sm:text-sm">
-                  มีคำขอจัดกิจกรรมรอตรวจสอบ {eventRequests.length} รายการ
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-3 sm:p-4 md:p-6">
-                <div className="space-y-3 sm:space-y-4">
-                  {eventRequests.length === 0 ? (
-                    <Alert className="border-green-200 bg-green-50">
-                      <CheckCircle className="h-4 w-4 text-green-500" />
-                      <AlertDescription className="text-xs sm:text-sm">ไม่มีคำขอจัดกิจกรรม</AlertDescription>
-                    </Alert>
-                  ) : (
-                    eventRequests.map((event) => (
-                      <Card key={event.id} className="border-2 hover:shadow-md transition-shadow">
-                        <CardContent className="p-3 sm:p-4 space-y-3">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1 min-w-0">
-                              <p className="font-semibold text-sm sm:text-base">{event.event_name}</p>
-                              <p className="text-xs sm:text-sm text-muted-foreground">
-                                โดย {event.student?.first_name} {event.student?.last_name}
-                              </p>
-                            </div>
-                            <Badge
-                              variant="secondary"
-                              className="bg-orange-100 text-orange-700 text-[10px] sm:text-xs shrink-0"
-                            >
-                              <Clock className="w-3 h-3 mr-1" />
-                              รอ
-                            </Badge>
-                          </div>
-                          <div className="bg-muted/50 p-2 sm:p-3 rounded-lg space-y-1.5 sm:space-y-2">
-                            <p className="text-xs sm:text-sm">
-                              <strong>ประเภท:</strong> {event.event_type}
-                            </p>
-                            <p className="text-xs sm:text-sm">
-                              <strong>วันที่:</strong>{" "}
-                              {new Date(event.event_date).toLocaleDateString("th-TH", {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                              })}
-                            </p>
-                            <p className="text-xs sm:text-sm">
-                              <strong>เวลา:</strong> {event.start_time} - {event.end_time}
-                            </p>
-                            <p className="text-xs sm:text-sm">
-                              <strong>สถานที่:</strong> {event.location || "-"}
-                            </p>
-                            <p className="text-xs sm:text-sm">
-                              <strong>ผู้เข้าร่วม:</strong> {event.expected_participants || "-"} คน
-                            </p>
-                            <p className="text-xs sm:text-sm line-clamp-2">
-                              <strong>รายละเอียด:</strong> {event.description}
-                            </p>
-                          </div>
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              className="flex-1 bg-green-600 hover:bg-green-700 text-xs sm:text-sm h-8 sm:h-9"
-                              onClick={() => handleReviewRequest("event_requests", event.id, "approved")}
-                            >
-                              <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-                              อนุมัติ
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              className="flex-1 text-xs sm:text-sm h-8 sm:h-9"
-                              onClick={() => handleReviewRequest("event_requests", event.id, "rejected")}
+                              onClick={() => handleReviewLeaveRequest(request.id, "rejected")}
                             >
                               <XCircle className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
                               ไม่อนุมัติ

@@ -312,21 +312,21 @@ export default function SuperAdmin() {
 
     setIsSubmitting(true);
     try {
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      // Create user using admin API with auto-confirmation
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
         email: newTeacher.email,
         password: newTeacher.password,
-        options: {
-          data: {
-            first_name: newTeacher.firstName,
-            last_name: newTeacher.lastName,
-          },
-          emailRedirectTo: `${window.location.origin}/`,
-        },
+        email_confirm: true,
+        user_metadata: {
+          first_name: newTeacher.firstName,
+          last_name: newTeacher.lastName,
+        }
       });
 
       if (authError) throw authError;
-      if (!authData.user) throw new Error("Failed to create user");
+      if (!authData.user) throw new Error("ไม่สามารถสร้างผู้ใช้ได้");
 
+      // Profile should be created by trigger, just update it
       const { error: profileError } = await supabase
         .from("profiles")
         .update({
@@ -335,7 +335,7 @@ export default function SuperAdmin() {
         })
         .eq("id", authData.user.id);
 
-      if (profileError) throw profileError;
+      if (profileError) console.error("Profile update warning:", profileError);
 
       if (newTeacher.groupIds.length > 0) {
         const assignments = newTeacher.groupIds.map((groupId) => ({
@@ -691,21 +691,21 @@ export default function SuperAdmin() {
 
     setIsSubmitting(true);
     try {
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      // Create user using admin API with auto-confirmation
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
         email: newStudent.email,
         password: newStudent.password,
-        options: {
-          data: {
-            first_name: newStudent.firstName,
-            last_name: newStudent.lastName,
-          },
-          emailRedirectTo: `${window.location.origin}/`,
-        },
+        email_confirm: true,
+        user_metadata: {
+          first_name: newStudent.firstName,
+          last_name: newStudent.lastName,
+        }
       });
 
       if (authError) throw authError;
       if (!authData.user) throw new Error("ไม่สามารถสร้างผู้ใช้ได้");
 
+      // Profile should be created by trigger, just update it
       const { error: profileError } = await supabase
         .from("profiles")
         .update({
@@ -717,7 +717,7 @@ export default function SuperAdmin() {
         })
         .eq("id", authData.user.id);
 
-      if (profileError) throw profileError;
+      if (profileError) console.error("Profile update warning:", profileError);
 
       if (newStudent.groupId) {
         const { error: memberError } = await supabase.from("group_members").insert({
@@ -956,43 +956,58 @@ export default function SuperAdmin() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="border-l-4 border-l-blue-500">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">นักศึกษา</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-sm font-medium">นักศึกษา</CardTitle>
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" title="อัปเดตแบบ Realtime" />
+              </div>
               <Users className="w-5 h-5 text-blue-500" />
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">{students.length}</div>
+              <p className="text-xs text-muted-foreground mt-1">อัปเดตแบบ Realtime</p>
             </CardContent>
           </Card>
 
           <Card className="border-l-4 border-l-green-500">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">อาจารย์</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-sm font-medium">อาจารย์</CardTitle>
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" title="อัปเดตแบบ Realtime" />
+              </div>
               <Shield className="w-5 h-5 text-green-500" />
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">{teachers.length}</div>
+              <p className="text-xs text-muted-foreground mt-1">อัปเดตแบบ Realtime</p>
             </CardContent>
           </Card>
 
           <Card className="border-l-4 border-l-purple-500">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">ผู้ดูแลระบบ</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-sm font-medium">ผู้ดูแลระบบ</CardTitle>
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" title="อัปเดตแบบ Realtime" />
+              </div>
               <Shield className="w-5 h-5 text-purple-500" />
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">{admins.length}</div>
+              <p className="text-xs text-muted-foreground mt-1">อัปเดตแบบ Realtime</p>
             </CardContent>
           </Card>
 
           <Card className="border-l-4 border-l-orange-500">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">ใบ Coaching</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-sm font-medium">ใบ Coaching</CardTitle>
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" title="อัปเดตแบบ Realtime" />
+              </div>
               <FileCheck className="w-5 h-5 text-orange-500" />
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">{sessions.length}</div>
               <p className="text-xs text-muted-foreground mt-1">
-                {sessions.filter((s) => s.status === "pending").length} รอตรวจสอบ
+                {sessions.filter((s) => s.status === "pending").length} รอตรวจสอบ • Realtime
               </p>
             </CardContent>
           </Card>

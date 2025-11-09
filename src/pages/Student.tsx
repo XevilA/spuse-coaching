@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Upload, FileCheck, Download, RefreshCw, AlertCircle } from "lucide-react";
+import { Upload, FileCheck, Download, RefreshCw, AlertCircle, Users as UsersIcon, User as UserIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,7 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GroupMemberManager } from "@/components/GroupMemberManager";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 // 🛡️ Security: Rate Limiter Class
 class RateLimiter {
@@ -118,6 +119,18 @@ export default function Student() {
   const [isLoadingTeachers, setIsLoadingTeachers] = useState(false);
   const [teacherError, setTeacherError] = useState<string | null>(null);
   const [rateLimitError, setRateLimitError] = useState<string | null>(null);
+  
+  // First-time setup states
+  const [showFirstTimeSetup, setShowFirstTimeSetup] = useState(false);
+  const [setupStep, setSetupStep] = useState<"role" | "create-group" | "add-members">("role");
+  const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+  const [newGroupData, setNewGroupData] = useState({
+    name: "",
+    year_level: "",
+    major: ""
+  });
+  const [memberEmails, setMemberEmails] = useState<string[]>(["", "", ""]);
+  const [addingMembers, setAddingMembers] = useState(false);
 
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -284,7 +297,7 @@ export default function Student() {
             .order("created_at", { ascending: false }),
           supabase.from("coaching_settings").select("*").eq("key", "min_sessions").single(),
           supabase.from("student_groups").select("*").order("name"),
-          supabase.from("group_members").select("is_leader").eq("student_id", userId).maybeSingle(),
+          supabase.from("group_members").select("is_leader, group_id").eq("student_id", userId).maybeSingle(),
         ]);
 
         if (!mountedRef.current) return;
@@ -320,6 +333,11 @@ export default function Student() {
         // Handle leader status
         if (leaderRes.data) {
           setIsLeader(leaderRes.data.is_leader || false);
+        }
+        
+        // Check if this is first-time user without a group
+        if (profileRes.data && !profileRes.data.group_id && !leaderRes.data?.group_id) {
+          setShowFirstTimeSetup(true);
         }
 
         // Fetch teachers
@@ -718,6 +736,136 @@ export default function Student() {
     [toast],
   );
 
+  const handleCreateGroup = async () => {
+    if (!newGroupData.name || !newGroupData.year_level || !newGroupData.major) {
+      toast({
+        variant: "destructive",
+        title: "กรุณากรอกข้อมูลให้ครบถ้วน",
+      });
+      return;
+    }
+
+    setIsCreatingGroup(true);
+    try {
+      // Create new group
+      const { data: newGroup, error: groupError } = await supabase
+        .from("student_groups")
+        .insert({
+          name: sanitizeInput(newGroupData.name),
+          year_level: sanitizeInput(newGroupData.year_level),
+          major: sanitizeInput(newGroupData.major),
+          required_sessions: 10
+        })
+        .select()
+        .single();
+
+      if (groupError) throw groupError;
+
+      // Add current user as leader
+      const { error: memberError } = await supabase
+        .from("group_members")
+        .insert({
+          group_id: newGroup.id,
+          student_id: user.id,
+          is_leader: true
+        });
+
+      if (memberError) throw memberError;
+
+      // Update profile with group_id
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({ group_id: newGroup.id })
+        .eq("id", user.id);
+
+      if (profileError) throw profileError;
+
+      toast({
+        title: "สร้างกลุ่มสำเร็จ",
+        description: "คุณได้สร้างกลุ่มและเป็นหัวหน้ากลุ่มแล้ว",
+      });
+
+      setSetupStep("add-members");
+      setSelectedGroup(newGroup.id);
+      setIsLeader(true);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+      });
+    } finally {
+      setIsCreatingGroup(false);
+    }
+  };
+
+  const handleAddMembers = async () => {
+    const validEmails = memberEmails.filter(email => email.trim() && email.includes("@"));
+    
+    if (validEmails.length === 0) {
+      setShowFirstTimeSetup(false);
+      await fetchData(user.id);
+      return;
+    }
+
+    setAddingMembers(true);
+    try {
+      const results = await Promise.allSettled(
+        validEmails.map(async (email) => {
+          // Find user by email
+          const { data: memberProfile, error: findError } = await supabase
+            .from("profiles")
+            .select("id")
+            .eq("email", email.trim())
+            .single();
+
+          if (findError || !memberProfile) {
+            throw new Error(`ไม่พบผู้ใช้: ${email}`);
+          }
+
+          // Add to group
+          const { error: addError } = await supabase
+            .from("group_members")
+            .insert({
+              group_id: selectedGroup,
+              student_id: memberProfile.id,
+              is_leader: false
+            });
+
+          if (addError) throw addError;
+
+          // Update member's profile
+          await supabase
+            .from("profiles")
+            .update({ group_id: selectedGroup })
+            .eq("id", memberProfile.id);
+
+          return email;
+        })
+      );
+
+      const succeeded = results.filter(r => r.status === "fulfilled").length;
+      const failed = results.filter(r => r.status === "rejected").length;
+
+      toast({
+        title: succeeded > 0 ? "เพิ่มสมาชิกสำเร็จ" : "เกิดข้อผิดพลาด",
+        description: `เพิ่มสมาชิกได้ ${succeeded} คน${failed > 0 ? `, ไม่สำเร็จ ${failed} คน` : ""}`,
+        variant: failed > 0 ? "destructive" : "default",
+      });
+
+      setShowFirstTimeSetup(false);
+      await fetchData(user.id);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+      });
+    } finally {
+      setAddingMembers(false);
+    }
+  };
+
   // 🚀 Performance: Memoized status badge
   const getStatusBadge = useCallback((status: string) => {
     const badges = {
@@ -749,6 +897,143 @@ export default function Student() {
 
   return (
     <DashboardLayout role="student" userName={userName}>
+      {/* First-time Setup Dialog */}
+      <Dialog open={showFirstTimeSetup} onOpenChange={setShowFirstTimeSetup}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>
+              {setupStep === "role" && "ยินดีต้อนรับ! คุณเป็นหัวหน้ากลุ่มหรือไม่?"}
+              {setupStep === "create-group" && "สร้างกลุ่มใหม่"}
+              {setupStep === "add-members" && "เพิ่มสมาชิกในกลุ่ม"}
+            </DialogTitle>
+            <DialogDescription>
+              {setupStep === "role" && "กรุณาเลือกบทบาทของคุณเพื่อตั้งค่ากลุ่ม Coaching"}
+              {setupStep === "create-group" && "กรอกข้อมูลกลุ่มของคุณ"}
+              {setupStep === "add-members" && "เพิ่มสมาชิกในกลุ่ม (สามารถเพิ่มได้ทีหลัง)"}
+            </DialogDescription>
+          </DialogHeader>
+
+          {setupStep === "role" && (
+            <div className="grid gap-4 py-4">
+              <Button
+                onClick={() => setSetupStep("create-group")}
+                className="h-24 flex flex-col gap-2"
+              >
+                <UsersIcon className="w-8 h-8" />
+                <span className="text-lg">ฉันเป็นหัวหน้ากลุ่ม</span>
+                <span className="text-xs opacity-80">สร้างกลุ่มและเพิ่มสมาชิก</span>
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowFirstTimeSetup(false);
+                  toast({
+                    title: "รอหัวหน้ากลุ่มเพิ่มคุณเข้ากลุ่ม",
+                    description: "กรุณาติดต่อหัวหน้ากลุ่มเพื่อเพิ่มคุณเข้ากลุ่ม",
+                  });
+                }}
+                variant="outline"
+                className="h-24 flex flex-col gap-2"
+              >
+                <UserIcon className="w-8 h-8" />
+                <span className="text-lg">ฉันเป็นสมาชิกกลุ่ม</span>
+                <span className="text-xs opacity-80">รอหัวหน้ากลุ่มเพิ่มเข้ากลุ่ม</span>
+              </Button>
+            </div>
+          )}
+
+          {setupStep === "create-group" && (
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="group-name">ชื่อกลุ่ม</Label>
+                <Input
+                  id="group-name"
+                  placeholder="เช่น กลุ่ม A"
+                  value={newGroupData.name}
+                  onChange={(e) => setNewGroupData(prev => ({ ...prev, name: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="year-level">ชั้นปี</Label>
+                <Select value={newGroupData.year_level} onValueChange={(value) => setNewGroupData(prev => ({ ...prev, year_level: value }))}>
+                  <SelectTrigger id="year-level">
+                    <SelectValue placeholder="เลือกชั้นปี" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">ปี 1</SelectItem>
+                    <SelectItem value="2">ปี 2</SelectItem>
+                    <SelectItem value="3">ปี 3</SelectItem>
+                    <SelectItem value="4">ปี 4</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="major">สาขา</Label>
+                <Input
+                  id="major"
+                  placeholder="เช่น วิทยาการคอมพิวเตอร์"
+                  value={newGroupData.major}
+                  onChange={(e) => setNewGroupData(prev => ({ ...prev, major: e.target.value }))}
+                />
+              </div>
+              <div className="flex gap-2 mt-4">
+                <Button variant="outline" onClick={() => setSetupStep("role")} className="flex-1">
+                  ย้อนกลับ
+                </Button>
+                <Button onClick={handleCreateGroup} disabled={isCreatingGroup} className="flex-1">
+                  {isCreatingGroup ? "กำลังสร้าง..." : "สร้างกลุ่ม"}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {setupStep === "add-members" && (
+            <div className="grid gap-4 py-4">
+              <p className="text-sm text-muted-foreground">
+                เพิ่มอีเมล์สมาชิกในกลุ่ม (ต้องใช้อีเมล์ @spumail.net)
+              </p>
+              {memberEmails.map((email, index) => (
+                <div key={index} className="space-y-2">
+                  <Label htmlFor={`member-${index}`}>สมาชิกคนที่ {index + 1}</Label>
+                  <Input
+                    id={`member-${index}`}
+                    type="email"
+                    placeholder="example@spumail.net"
+                    value={email}
+                    onChange={(e) => {
+                      const newEmails = [...memberEmails];
+                      newEmails[index] = e.target.value;
+                      setMemberEmails(newEmails);
+                    }}
+                  />
+                </div>
+              ))}
+              <Button
+                variant="outline"
+                onClick={() => setMemberEmails([...memberEmails, ""])}
+                className="w-full"
+              >
+                + เพิ่มสมาชิก
+              </Button>
+              <div className="flex gap-2 mt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowFirstTimeSetup(false);
+                    fetchData(user.id);
+                  }}
+                  className="flex-1"
+                >
+                  ข้ามไปก่อน
+                </Button>
+                <Button onClick={handleAddMembers} disabled={addingMembers} className="flex-1">
+                  {addingMembers ? "กำลังเพิ่ม..." : "เพิ่มสมาชิก"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <div className="space-y-6 p-4 sm:p-6">
         {/* Rate Limit Warning */}
         {rateLimitError && (

@@ -149,7 +149,7 @@ const Teacher = () => {
         .select(
           `
           *,
-          student_groups(name, required_sessions)
+          student_groups(id, name, year_level, major)
         `,
         )
         .eq("teacher_id", teacherId);
@@ -442,42 +442,97 @@ const Teacher = () => {
   return (
     <DashboardLayout role="teacher" userName={`${profile?.first_name || ""} ${profile?.last_name || ""}`}>
       <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-500 p-2 sm:p-4 md:p-0">
-        {/* Personal Information Section */}
+        {/* Group Assignments Section */}
         <Card className="shadow-sm border-l-4 border-l-primary">
           <CardHeader className="pb-3">
-            <CardTitle className="text-lg">ข้อมูลส่วนตัว</CardTitle>
-            <CardDescription>เลือกกลุ่มที่คุณดูแล</CardDescription>
+            <CardTitle className="text-lg">กลุ่มที่ดูแล</CardTitle>
+            <CardDescription>จัดการกลุ่มและกำหนดจำนวนครั้ง Coaching ที่ต้องทำ</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="teacher-group">กลุ่ม</Label>
-                <Select
-                  value={profile?.group_id || ""}
-                  onValueChange={(value) => setProfile((prev: any) => ({ ...prev, group_id: value }))}
-                >
-                  <SelectTrigger id="teacher-group" className="bg-background">
-                    <SelectValue placeholder="เลือกกลุ่ม" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-popover border shadow-md z-50">
-                    {groups.map((group) => (
-                      <SelectItem key={group.id} value={group.id}>
-                        {group.name} - {group.major} ปี {group.year_level}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+          <CardContent>
+            {teacherAssignments && teacherAssignments.length > 0 ? (
+              <div className="space-y-4">
+                {teacherAssignments.map((assignment: any) => (
+                  <Card key={assignment.id} className="p-4">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="flex-1">
+                        <h3 className="font-semibold">{assignment.student_groups?.name}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {assignment.student_groups?.major} ปี {assignment.student_groups?.year_level}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor={`sessions-${assignment.id}`} className="whitespace-nowrap">
+                          จำนวนครั้งที่ต้องทำ:
+                        </Label>
+                        <Input
+                          id={`sessions-${assignment.id}`}
+                          type="number"
+                          min="1"
+                          max="50"
+                          value={assignment.required_sessions || 10}
+                          onChange={async (e) => {
+                            const newValue = parseInt(e.target.value) || 10;
+                            try {
+                              const { error } = await supabase
+                                .from("teacher_assignments")
+                                .update({ required_sessions: newValue })
+                                .eq("id", assignment.id);
+                              
+                              if (error) throw error;
+                              
+                              toast({
+                                title: "บันทึกสำเร็จ",
+                                description: `อัปเดตจำนวนครั้ง Coaching เป็น ${newValue} ครั้งแล้ว`,
+                              });
+                              
+                              fetchData(user.id);
+                            } catch (error: any) {
+                              toast({
+                                variant: "destructive",
+                                title: "เกิดข้อผิดพลาด",
+                                description: error.message,
+                              });
+                            }
+                          }}
+                          className="w-20"
+                        />
+                        <span className="text-sm text-muted-foreground">ครั้ง</span>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
               </div>
-              <div className="flex items-end">
-                <Button
-                  onClick={handleSaveGroup}
-                  disabled={isSavingProfile || !profile?.group_id}
-                  className="w-full"
-                >
-                  {isSavingProfile ? "กำลังบันทึก..." : "บันทึกกลุ่ม"}
-                </Button>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground mb-4">ยังไม่มีกลุ่มที่ดูแล</p>
+                <div className="space-y-2">
+                  <Label htmlFor="add-group">เลือกกลุ่มที่ต้องการดูแล</Label>
+                  <div className="flex gap-2">
+                    <Select
+                      value={profile?.group_id || ""}
+                      onValueChange={(value) => setProfile((prev: any) => ({ ...prev, group_id: value }))}
+                    >
+                      <SelectTrigger id="add-group" className="bg-background flex-1">
+                        <SelectValue placeholder="เลือกกลุ่ม" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-popover border shadow-md z-50">
+                        {groups.map((group) => (
+                          <SelectItem key={group.id} value={group.id}>
+                            {group.name} - {group.major} ปี {group.year_level}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      onClick={handleSaveGroup}
+                      disabled={isSavingProfile || !profile?.group_id}
+                    >
+                      {isSavingProfile ? "กำลังบันทึก..." : "เพิ่มกลุ่ม"}
+                    </Button>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
           </CardContent>
         </Card>
 

@@ -37,22 +37,38 @@ export default function Admin() {
     checkAuth();
   }, []);
 
+  const verifyRole = async () => {
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (!currentUser) {
+      navigate('/auth');
+      return false;
+    }
+    
+    const { data: roleData } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', currentUser.id)
+      .single();
+    
+    if (roleData?.role !== 'admin' && roleData?.role !== 'super_admin') {
+      toast({
+        variant: "destructive",
+        title: "ไม่มีสิทธิ์เข้าถึง",
+        description: "คุณไม่มีสิทธิ์เข้าถึงหน้านี้",
+      });
+      navigate('/auth');
+      return false;
+    }
+    return true;
+  };
+
   const checkAuth = async () => {
+    const isAuthorized = await verifyRole();
+    if (!isAuthorized) return;
+
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
       navigate("/auth");
-      return;
-    }
-
-    const { data: roleData } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", session.user.id)
-      .single();
-
-    if (roleData?.role !== "admin" && roleData?.role !== "super_admin") {
-      const redirectPath = roleData?.role === "teacher" ? "/teacher" : roleData?.role === "student" ? "/student" : "/auth";
-      navigate(redirectPath);
       return;
     }
 

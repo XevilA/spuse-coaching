@@ -140,7 +140,7 @@ export const AppointmentCalendar = ({ role, userId }: AppointmentCalendarProps) 
               </div>
               <div>
                 <p className="text-sm font-medium">เวลา</p>
-                <p>{selectedEvent.start && selectedEvent.end && `${format(selectedEvent.start, "HH:mm")} - ${format(selectedEvent.end, "HH:mm")}`}</p>
+                <p>{selectedEvent.start && selectedEvent.end && `${format(selectedEvent.start, "HH:mm")} น. - ${format(selectedEvent.end, "HH:mm")} น.`}</p>
               </div>
               <div>
                 <p className="text-sm font-medium">สถานะ</p>

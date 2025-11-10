@@ -225,7 +225,9 @@ export const AppointmentManager = ({ role, userId }: AppointmentManagerProps) =>
                   </div>
                   <div className="flex items-center gap-2">
                     <Clock className="w-4 h-4" />
-                    <span>{apt.start_time} - {apt.end_time}</span>
+                    <span>
+                      {apt.start_time.substring(0, 5)} น. - {apt.end_time.substring(0, 5)} น.
+                    </span>
                   </div>
                   {getStatusBadge(apt.status)}
                 </div>

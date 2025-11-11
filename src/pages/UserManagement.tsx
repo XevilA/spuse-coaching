@@ -308,6 +308,7 @@ const UserManagement = () => {
                       <SelectContent>
                         <SelectItem value="teacher">อาจารย์</SelectItem>
                         <SelectItem value="admin">Admin/Staff</SelectItem>
+                        <SelectItem value="external_evaluator">กรรมการภายนอก</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -363,10 +364,11 @@ const UserManagement = () => {
                                       <SelectTrigger>
                                         <SelectValue placeholder="เลือกบทบาท" />
                                       </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="teacher">อาจารย์</SelectItem>
-                                        <SelectItem value="admin">Admin/Staff</SelectItem>
-                                      </SelectContent>
+                                       <SelectContent>
+                                         <SelectItem value="teacher">อาจารย์</SelectItem>
+                                         <SelectItem value="admin">Admin/Staff</SelectItem>
+                                         <SelectItem value="external_evaluator">กรรมการภายนอก</SelectItem>
+                                       </SelectContent>
                                     </Select>
                                   </TableCell>
                                   <TableCell>

@@ -125,6 +125,9 @@ export default function Auth() {
         navigate("/admin");
       } else if (roleData?.role === "teacher") {
         navigate("/teacher");
+        // @ts-ignore - external_evaluator role will be available after types regeneration
+      } else if (roleData?.role === "external_evaluator") {
+        navigate("/external-evaluator");
       } else {
         navigate("/student");
       }

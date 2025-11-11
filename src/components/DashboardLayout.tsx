@@ -38,6 +38,8 @@ export const DashboardLayout = ({ children, role, userName }: DashboardLayoutPro
         return "อาจารย์";
       case "student":
         return "นักศึกษา";
+      case "external_evaluator":
+        return "กรรมการภายนอก";
       default:
         return role;
     }

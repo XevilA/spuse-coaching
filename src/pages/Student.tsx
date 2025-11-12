@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { GroupMemberManager } from "@/components/GroupMemberManager";
+import { StudentGroupSelector } from "@/components/StudentGroupSelector";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -106,7 +106,7 @@ export default function Student() {
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [sessions, setSessions] = useState<any[]>([]);
-  const [requiredSessions, setRequiredSessions] = useState(10);
+  const [requiredSessions, setRequiredSessions] = useState(3);
   const [sessionNumber, setSessionNumber] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);

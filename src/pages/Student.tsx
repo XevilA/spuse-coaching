@@ -1269,11 +1269,6 @@ export default function Student() {
           </CardContent>
         </Card>
 
-            {/* Group Member Manager */}
-            {submissionType === "group" && selectedGroup && isLeader && user?.id && (
-              <GroupMemberManager userId={user.id} groupId={selectedGroup} />
-            )}
-
             {/* Sessions History */}
             <Card>
               <CardHeader>
@@ -1397,36 +1392,17 @@ export default function Student() {
                     <Input value={profile?.student_id || "-"} disabled className="bg-muted" />
                   </div>
                 </div>
-                <div>
-                  <Label htmlFor="studentGroup">กลุ่มเรียนของคุณ</Label>
-                  <div className="flex gap-2 items-center">
-                    <Select value={selectedGroup} onValueChange={handleSaveGroup} disabled={isSavingProfile}>
-                      <SelectTrigger className="bg-background">
-                        <SelectValue placeholder="เลือกกลุ่มเรียนของคุณ" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-background z-50">
-                        {groups.map((group) => (
-                          <SelectItem key={group.id} value={group.id}>
-                            {group.name} - {group.major} ชั้นปีที่ {group.year_level}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {isSavingProfile && <RefreshCw className="w-4 h-4 animate-spin text-muted-foreground" />}
-                  </div>
-                  {selectedGroup && (
-                    <p className="text-sm text-muted-foreground mt-2">
-                      ✓ คุณอยู่กลุ่ม: {groups.find((g) => g.id === selectedGroup)?.name}
-                      {isLeader && (
-                        <Badge className="ml-2" variant="default">
-                          หัวหน้ากลุ่ม
-                        </Badge>
-                      )}
-                    </p>
-                  )}
-                </div>
               </CardContent>
             </Card>
+
+            {/* Group Management */}
+            {user?.id && (
+              <StudentGroupSelector 
+                userId={user.id} 
+                currentGroupId={selectedGroup} 
+                onGroupChange={() => fetchData(user.id)}
+              />
+            )}
           </TabsContent>
         </Tabs>
       </div>

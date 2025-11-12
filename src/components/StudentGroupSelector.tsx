@@ -11,6 +11,7 @@ import { SmartStudentSearch } from "./SmartStudentSearch";
 import { Users, UserPlus, UserMinus, Crown, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { studentGroupSchema } from "@/lib/validations";
 
 interface Student {
   id: string;
@@ -102,25 +103,25 @@ export function StudentGroupSelector({ userId, currentGroupId, onGroupChange }: 
   };
 
   const handleCreateGroup = async () => {
-    if (!newGroupName || !newGroupMajor || !newGroupYear) {
-      toast({
-        variant: "destructive",
-        title: "กรุณากรอกข้อมูลให้ครบถ้วน"
-      });
-      return;
-    }
-
     setIsLoading(true);
     try {
-      // Create group
+      // Validate input data
+      const validatedData = studentGroupSchema.parse({
+        name: newGroupName,
+        major: newGroupMajor,
+        year_level: newGroupYear,
+        required_sessions: 3
+      });
+
+      // Create group with validated data
       const { data: newGroup, error: groupError } = await supabase
         .from("student_groups")
-        .insert({
-          name: newGroupName,
-          major: newGroupMajor,
-          year_level: newGroupYear,
-          required_sessions: 3
-        })
+        .insert([{
+          name: validatedData.name,
+          major: validatedData.major,
+          year_level: validatedData.year_level,
+          required_sessions: validatedData.required_sessions
+        }])
         .select()
         .single();
 
@@ -161,10 +162,12 @@ export function StudentGroupSelector({ userId, currentGroupId, onGroupChange }: 
       fetchGroups();
       onGroupChange();
     } catch (error: any) {
+      // Better error handling
+      const errorMessage = error.message || "กรุณาตรวจสอบข้อมูลอีกครั้ง";
       toast({
         variant: "destructive",
         title: "เกิดข้อผิดพลาด",
-        description: error.message
+        description: errorMessage
       });
     } finally {
       setIsLoading(false);

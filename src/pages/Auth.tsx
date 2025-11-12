@@ -7,25 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { z } from "zod";
-
-const loginSchema = z.object({
-  identifier: z.string().min(1, "กรุณากรอกอีเมลหรือรหัสนักศึกษา/รหัสพนักงาน"),
-  password: z.string().min(6, "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร"),
-});
-
-const registerSchema = z.object({
-  email: z.string().email("อีเมลไม่ถูกต้อง"),
-  password: z.string().min(6, "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร"),
-  confirmPassword: z.string(),
-  firstName: z.string().min(1, "กรุณากรอกชื่อ"),
-  lastName: z.string().min(1, "กรุณากรอกนามสกุล"),
-  studentId: z.string().optional(),
-  groupId: z.string().optional(),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "รหัสผ่านไม่ตรงกัน",
-  path: ["confirmPassword"],
-});
+import { loginSchema, registerSchema } from "@/lib/validations";
 
 export default function Auth() {
   const [isLoading, setIsLoading] = useState(false);

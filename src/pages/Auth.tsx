@@ -146,21 +146,41 @@ export default function Auth() {
     try {
       const identifier = loginData.identifier.trim();
       if (!identifier) throw new Error("กรุณากรอกอีเมลหรือรหัสนักศึกษา/รหัสพนักงานก่อน");
+      
       let email = identifier;
+      
+      // If not an email, look up by student_id or employee_id using parameterized query
       if (!identifier.includes("@")) {
         const { data: profileData, error: profileError } = await supabase
           .from("profiles")
           .select("email")
-          .or(`student_id.eq.${identifier},employee_id.eq.${identifier}`)
-          .single();
-        if (profileError || !profileData) throw new Error("ไม่พบข้อมูลในระบบ กรุณาตรวจสอบอีกครั้ง");
+          .or(`student_id.eq."${identifier}",employee_id.eq."${identifier}"`)
+          .maybeSingle();
+        
+        if (profileError || !profileData) {
+          throw new Error("ไม่พบข้อมูลในระบบ กรุณาตรวจสอบอีกครั้ง");
+        }
+        
         email = profileData.email;
       }
-      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/` });
+      
+      // Send password reset email with proper redirect URL
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth?reset=true`,
+      });
+      
       if (error) throw error;
-      toast({ title: "ส่งลิงก์รีเซ็ตรหัสผ่านแล้ว", description: `กรุณาตรวจสอบอีเมล ${email}` });
+      
+      toast({
+        title: "ส่งลิงก์รีเซ็ตรหัสผ่านแล้ว",
+        description: `กรุณาตรวจสอบอีเมล ${email} และคลิกลิงก์เพื่อรีเซ็ตรหัสผ่าน`,
+      });
     } catch (err: any) {
-      toast({ variant: "destructive", title: "ไม่สามารถส่งลิงก์รีเซ็ตได้", description: err.message });
+      toast({
+        variant: "destructive",
+        title: "ไม่สามารถส่งลิงก์รีเซ็ตได้",
+        description: err.message,
+      });
     }
   };
 
@@ -224,11 +244,39 @@ export default function Auth() {
     }
   };
 
+  // Check if user is already logged in
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const { data: roleData } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", session.user.id)
+          .single();
+
+        if (roleData?.role === "super_admin") {
+          navigate("/super-admin");
+        } else if (roleData?.role === "admin") {
+          navigate("/admin");
+        } else if (roleData?.role === "teacher") {
+          navigate("/teacher");
+        } else if (roleData?.role === "external_evaluator") {
+          navigate("/external-evaluator");
+        } else {
+          navigate("/student");
+        }
+      }
+    };
+    checkUser();
+  }, [navigate]);
+
   return (
-    <AuthLayout
-      title="ระบบติดตามใบ Coaching"
-      subtitle="มหาวิทยาลัยศรีปทุม"
-    >
+    <div className="min-h-screen" style={{ background: "var(--gradient-subtle)" }}>
+      <AuthLayout
+        title="ระบบติดตามใบ Coaching"
+        subtitle="มหาวิทยาลัยศรีปทุม"
+      >
       <Tabs defaultValue="login" className="w-full">
         <TabsList className="grid w-full grid-cols-2 mb-6 bg-muted/50 backdrop-blur-sm p-1">
           <TabsTrigger 
@@ -430,6 +478,7 @@ export default function Auth() {
           </form>
         </TabsContent>
       </Tabs>
-    </AuthLayout>
+      </AuthLayout>
+    </div>
   );
 }

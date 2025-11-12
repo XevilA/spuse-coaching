@@ -922,7 +922,7 @@ export default function Student() {
   }
 
   return (
-    <DashboardLayout role="student" userName={userName}>
+    <DashboardLayout role="student" userName={userName} variant="student">
       {/* First-time Setup Dialog */}
       <Dialog open={showFirstTimeSetup} onOpenChange={setShowFirstTimeSetup}>
         <DialogContent className="sm:max-w-[600px]">
@@ -1069,75 +1069,40 @@ export default function Student() {
           </Alert>
         )}
 
-        {/* Profile Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-xl sm:text-2xl">ข้อมูลส่วนตัว</CardTitle>
-            <CardDescription>เลือกกลุ่มเรียนของคุณ</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label>ชื่อ-นามสกุล</Label>
-                <Input value={userName} disabled className="bg-muted" />
-              </div>
-              <div>
-                <Label>รหัสนักศึกษา</Label>
-                <Input value={profile?.student_id || "-"} disabled className="bg-muted" />
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="studentGroup">กลุ่มเรียนของคุณ</Label>
-              <div className="flex gap-2 items-center">
-                <Select value={selectedGroup} onValueChange={handleSaveGroup} disabled={isSavingProfile}>
-                  <SelectTrigger className="bg-background">
-                    <SelectValue placeholder="เลือกกลุ่มเรียนของคุณ" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-background z-50">
-                    {groups.map((group) => (
-                      <SelectItem key={group.id} value={group.id}>
-                        {group.name} - {group.major} ชั้นปีที่ {group.year_level}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {isSavingProfile && <RefreshCw className="w-4 h-4 animate-spin text-muted-foreground" />}
-              </div>
-              {selectedGroup && (
-                <p className="text-sm text-muted-foreground mt-2">
-                  ✓ คุณอยู่กลุ่ม: {groups.find((g) => g.id === selectedGroup)?.name}
-                  {isLeader && (
-                    <Badge className="ml-2" variant="default">
-                      หัวหน้ากลุ่ม
-                    </Badge>
-                  )}
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        {/* Main Tabs */}
+        <Tabs defaultValue="coaching" className="w-full">
+          <TabsList className="grid w-full grid-cols-3 mb-6">
+            <TabsTrigger value="coaching">📝 Coaching</TabsTrigger>
+            <TabsTrigger value="appointments">📅 นัดหมาย</TabsTrigger>
+            <TabsTrigger value="profile">👤 โปรไฟล์</TabsTrigger>
+          </TabsList>
 
-        {/* Progress Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-xl sm:text-2xl">ความคืบหน้า Coaching</CardTitle>
-            <CardDescription>
-              {completedSessions}/{requiredSessions} ครั้ง
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Progress value={progressPercentage} className="h-3" />
-            <p className="text-center mt-2 text-sm font-medium">{Math.round(progressPercentage)}% เสร็จสมบูรณ์</p>
-          </CardContent>
-        </Card>
+          {/* Coaching Tab */}
+          <TabsContent value="coaching" className="space-y-6">
+            {/* Progress Card */}
+            <Card className="border-2 border-primary/20">
+              <CardHeader>
+                <CardTitle className="text-2xl flex items-center gap-2">
+                  <span className="text-3xl">🎯</span>
+                  ความคืบหน้า Coaching
+                </CardTitle>
+                <CardDescription className="text-lg">
+                  {completedSessions}/{requiredSessions} ครั้ง
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Progress value={progressPercentage} className="h-4" />
+                <p className="text-center mt-3 text-lg font-semibold">{Math.round(progressPercentage)}% เสร็จสมบูรณ์</p>
+              </CardContent>
+            </Card>
 
-        {/* Upload Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg sm:text-xl">อัปโหลดใบ Coaching</CardTitle>
-            <CardDescription>เลือกประเภทการส่งงาน: ส่งแบบส่วนตัว หรือ ส่งแบบกลุ่ม</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+            {/* Upload Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-xl">อัปโหลดใบ Coaching</CardTitle>
+                <CardDescription>เลือกประเภทการส่งงาน: ส่งแบบส่วนตัว หรือ ส่งแบบกลุ่ม</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
             {/* Submission Type */}
             <div className="space-y-2">
               <Label>ประเภทการส่ง</Label>
@@ -1302,84 +1267,166 @@ export default function Student() {
           </CardContent>
         </Card>
 
-        {/* Group Member Manager */}
-        {submissionType === "group" && selectedGroup && isLeader && user?.id && (
-          <GroupMemberManager userId={user.id} groupId={selectedGroup} />
-        )}
-
-        {/* Sessions History */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg sm:text-xl">ประวัติการส่ง</CardTitle>
-            <CardDescription>
-              ทั้งหมด {sessions.length} รายการ ({completedSessions} อนุมัติแล้ว)
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {sessions.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <Upload className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                <p>ยังไม่มีประวัติการส่งใบ Coaching</p>
-                <p className="text-sm mt-2">เริ่มส่งใบ Coaching แรกของคุณเลย!</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>ครั้งที่</TableHead>
-                      <TableHead>ประเภท</TableHead>
-                      <TableHead>วันที่ส่ง</TableHead>
-                      <TableHead>สถานะ</TableHead>
-                      <TableHead>คะแนน</TableHead>
-                      <TableHead>ความคิดเห็น</TableHead>
-                      <TableHead>ไฟล์</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sessions.map((session) => (
-                      <TableRow key={session.id}>
-                        <TableCell className="font-medium">#{session.session_number}</TableCell>
-                        <TableCell className="text-sm">
-                          <Badge variant={session.group_id ? "default" : "outline"}>
-                            {session.group_id ? "กลุ่ม" : "ส่วนตัว"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {new Date(session.created_at).toLocaleDateString("th-TH", {
-                            year: "numeric",
-                            month: "short",
-                            day: "numeric",
-                          })}
-                        </TableCell>
-                        <TableCell>{getStatusBadge(session.status)}</TableCell>
-                        <TableCell className="font-medium">
-                          {session.score ? (
-                            <span className="text-green-600">
-                              {session.score}/{session.max_score || 100}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="max-w-xs">
-                          <div className="truncate text-sm" title={session.teacher_comment}>
-                            {session.teacher_comment || "-"}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Button variant="outline" size="sm" onClick={() => viewFile(session.file_url)}>
-                            <Download className="w-4 h-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+            {/* Group Member Manager */}
+            {submissionType === "group" && selectedGroup && isLeader && user?.id && (
+              <GroupMemberManager userId={user.id} groupId={selectedGroup} />
             )}
-          </CardContent>
-        </Card>
+
+            {/* Sessions History */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-xl">📚 ประวัติการส่ง</CardTitle>
+                <CardDescription>
+                  ทั้งหมด {sessions.length} รายการ ({completedSessions} อนุมัติแล้ว)
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {sessions.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Upload className="w-12 h-12 mx-auto mb-4 opacity-30" />
+                    <p>ยังไม่มีประวัติการส่งใบ Coaching</p>
+                    <p className="text-sm mt-2">เริ่มส่งใบ Coaching แรกของคุณเลย!</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>ครั้งที่</TableHead>
+                          <TableHead>ประเภท</TableHead>
+                          <TableHead>วันที่ส่ง</TableHead>
+                          <TableHead>สถานะ</TableHead>
+                          <TableHead>คะแนน</TableHead>
+                          <TableHead>ความคิดเห็นจากอาจารย์</TableHead>
+                          <TableHead>ไฟล์</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {sessions.map((session) => (
+                          <TableRow key={session.id} className="hover:bg-muted/50">
+                            <TableCell className="font-bold text-lg">#{session.session_number}</TableCell>
+                            <TableCell className="text-sm">
+                              <Badge variant={session.group_id ? "default" : "outline"}>
+                                {session.group_id ? "กลุ่ม" : "ส่วนตัว"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {new Date(session.created_at).toLocaleDateString("th-TH", {
+                                year: "numeric",
+                                month: "short",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </TableCell>
+                            <TableCell>{getStatusBadge(session.status)}</TableCell>
+                            <TableCell className="font-semibold text-center">
+                              {session.score ? (
+                                <div className="flex flex-col">
+                                  <span className="text-xl text-green-600">
+                                    {session.score}
+                                  </span>
+                                  <span className="text-xs text-muted-foreground">
+                                    / {session.max_score || 100}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="max-w-md">
+                              {session.teacher_comment ? (
+                                <div className="p-3 bg-muted/50 rounded-lg border border-border">
+                                  <p className="text-sm text-foreground whitespace-pre-wrap">
+                                    💬 {session.teacher_comment}
+                                  </p>
+                                  {session.reviewed_at && (
+                                    <p className="text-xs text-muted-foreground mt-2">
+                                      ตรวจเมื่อ: {new Date(session.reviewed_at).toLocaleDateString("th-TH", {
+                                        year: "numeric",
+                                        month: "short",
+                                        day: "numeric",
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      })}
+                                    </p>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground text-sm">ยังไม่มีความคิดเห็น</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Button variant="outline" size="sm" onClick={() => viewFile(session.file_url)} className="gap-2">
+                                <Download className="w-4 h-4" />
+                                ดู
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Appointments Tab */}
+          <TabsContent value="appointments" className="space-y-6">
+            {user?.id && <AppointmentManager role="student" userId={user.id} />}
+          </TabsContent>
+
+          {/* Profile Tab */}
+          <TabsContent value="profile" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-xl">👤 ข้อมูลส่วนตัว</CardTitle>
+                <CardDescription>จัดการข้อมูลและกลุ่มเรียนของคุณ</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label>ชื่อ-นามสกุล</Label>
+                    <Input value={userName} disabled className="bg-muted" />
+                  </div>
+                  <div>
+                    <Label>รหัสนักศึกษา</Label>
+                    <Input value={profile?.student_id || "-"} disabled className="bg-muted" />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="studentGroup">กลุ่มเรียนของคุณ</Label>
+                  <div className="flex gap-2 items-center">
+                    <Select value={selectedGroup} onValueChange={handleSaveGroup} disabled={isSavingProfile}>
+                      <SelectTrigger className="bg-background">
+                        <SelectValue placeholder="เลือกกลุ่มเรียนของคุณ" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-background z-50">
+                        {groups.map((group) => (
+                          <SelectItem key={group.id} value={group.id}>
+                            {group.name} - {group.major} ชั้นปีที่ {group.year_level}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {isSavingProfile && <RefreshCw className="w-4 h-4 animate-spin text-muted-foreground" />}
+                  </div>
+                  {selectedGroup && (
+                    <p className="text-sm text-muted-foreground mt-2">
+                      ✓ คุณอยู่กลุ่ม: {groups.find((g) => g.id === selectedGroup)?.name}
+                      {isLeader && (
+                        <Badge className="ml-2" variant="default">
+                          หัวหน้ากลุ่ม
+                        </Badge>
+                      )}
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </DashboardLayout>
   );

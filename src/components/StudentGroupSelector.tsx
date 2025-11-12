@@ -116,7 +116,12 @@ export function StudentGroupSelector({ userId, currentGroupId, onGroupChange }: 
       // Create group with validated data
       const { data: newGroup, error: groupError } = await supabase
         .from("student_groups")
-        .insert([validatedData])
+        .insert([{
+          name: validatedData.name,
+          major: validatedData.major,
+          year_level: validatedData.year_level,
+          required_sessions: validatedData.required_sessions
+        }])
         .select()
         .single();
 

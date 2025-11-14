@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Upload, FileCheck, Download, RefreshCw, AlertCircle, Users as UsersIcon, User as UserIcon } from "lucide-react";
+import { Upload, FileCheck, Download, RefreshCw, AlertCircle, Users as UsersIcon, User as UserIcon, Trash2, Edit } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,7 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StudentGroupSelector } from "@/components/StudentGroupSelector";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AppointmentManager } from "@/components/AppointmentManager";
 
@@ -121,6 +121,13 @@ export default function Student() {
   const [isLoadingTeachers, setIsLoadingTeachers] = useState(false);
   const [teacherError, setTeacherError] = useState<string | null>(null);
   const [rateLimitError, setRateLimitError] = useState<string | null>(null);
+  
+  // Edit/Delete states
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedSession, setSelectedSession] = useState<any>(null);
+  const [editFile, setEditFile] = useState<File | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // First-time setup states
   const [showFirstTimeSetup, setShowFirstTimeSetup] = useState(false);
@@ -894,6 +901,122 @@ export default function Student() {
     }
   };
 
+  // Handle Delete Session
+  const handleDeleteSession = useCallback(async () => {
+    if (!selectedSession) return;
+    
+    setIsDeleting(true);
+    try {
+      // Delete file from storage
+      if (selectedSession.file_url) {
+        const fileName = selectedSession.file_url.split('/').pop();
+        await supabase.storage.from('coaching-forms').remove([fileName]);
+      }
+      
+      // Delete session record
+      const { error } = await supabase
+        .from('coaching_sessions')
+        .delete()
+        .eq('id', selectedSession.id);
+      
+      if (error) throw error;
+      
+      toast({
+        title: "ลบสำเร็จ",
+        description: "ลบการส่งงานเรียบร้อยแล้ว",
+      });
+      
+      setDeleteDialogOpen(false);
+      setSelectedSession(null);
+      if (user) await fetchData(user.id);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [selectedSession, user, toast]);
+
+  // Handle Edit Session
+  const handleEditSession = useCallback(async () => {
+    if (!selectedSession || !editFile) {
+      toast({
+        variant: "destructive",
+        title: "กรุณาเลือกไฟล์ใหม่",
+      });
+      return;
+    }
+    
+    // Validate file
+    const fileValidation = validateFile(editFile);
+    if (!fileValidation.valid) {
+      toast({
+        variant: "destructive",
+        title: "ไฟล์ไม่ถูกต้อง",
+        description: fileValidation.error,
+      });
+      return;
+    }
+    
+    setIsUploading(true);
+    try {
+      // Delete old file
+      if (selectedSession.file_url) {
+        const oldFileName = selectedSession.file_url.split('/').pop();
+        await supabase.storage.from('coaching-forms').remove([oldFileName]);
+      }
+      
+      // Upload new file
+      const fileExt = editFile.name.split(".").pop();
+      const sanitizedFileName = `${user.id}_${Date.now()}.${fileExt}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from("coaching-forms")
+        .upload(sanitizedFileName, editFile, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+      
+      if (uploadError) throw uploadError;
+      
+      const { data: { publicUrl } } = supabase.storage
+        .from("coaching-forms")
+        .getPublicUrl(sanitizedFileName);
+      
+      // Update session record
+      const { error: updateError } = await supabase
+        .from("coaching_sessions")
+        .update({
+          file_url: sanitizedFileName,
+          file_name: editFile.name,
+        })
+        .eq("id", selectedSession.id);
+      
+      if (updateError) throw updateError;
+      
+      toast({
+        title: "แก้ไขสำเร็จ",
+        description: "อัปเดตไฟล์ส่งงานเรียบร้อยแล้ว",
+      });
+      
+      setEditDialogOpen(false);
+      setSelectedSession(null);
+      setEditFile(null);
+      if (user) await fetchData(user.id);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  }, [selectedSession, editFile, user, toast]);
+
   // 🚀 Performance: Memoized status badge
   const getStatusBadge = useCallback((status: string) => {
     const badges = {
@@ -1059,6 +1182,100 @@ export default function Student() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Session Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>แก้ไขไฟล์ Coaching ครั้งที่ {selectedSession?.session_number}</DialogTitle>
+            <DialogDescription>
+              อัปโหลดไฟล์ใหม่เพื่อแทนที่ไฟล์เดิม (เฉพาะงานที่รอยืนยันเท่านั้น)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>ไฟล์ปัจจุบัน</Label>
+              <div className="p-3 bg-muted rounded-lg">
+                <p className="text-sm">{selectedSession?.file_name}</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-file">
+                อัปโหลดไฟล์ใหม่ <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                id="edit-file"
+                type="file"
+                accept=".pdf,application/pdf"
+                onChange={(e) => {
+                  const selectedFile = e.target.files?.[0];
+                  if (selectedFile) {
+                    const validation = validateFile(selectedFile);
+                    if (validation.valid) {
+                      setEditFile(selectedFile);
+                    } else {
+                      toast({
+                        variant: "destructive",
+                        title: "ไฟล์ไม่ถูกต้อง",
+                        description: validation.error,
+                      });
+                      e.target.value = "";
+                    }
+                  }
+                }}
+              />
+              {editFile && (
+                <p className="text-xs text-green-600 flex items-center gap-1">
+                  <FileCheck className="w-3 h-3" />
+                  เลือกไฟล์: {editFile.name} ({(editFile.size / 1024 / 1024).toFixed(2)} MB)
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => {
+              setEditDialogOpen(false);
+              setEditFile(null);
+            }}>
+              ยกเลิก
+            </Button>
+            <Button onClick={handleEditSession} disabled={isUploading || !editFile}>
+              {isUploading ? "กำลังอัปโหลด..." : "บันทึก"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Session Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>ยืนยันการลบ</DialogTitle>
+            <DialogDescription>
+              คุณต้องการลบการส่งงาน Coaching ครั้งที่ {selectedSession?.session_number} ใช่หรือไม่?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                การลบจะไม่สามารถย้อนกลับได้ ไฟล์และข้อมูลทั้งหมดจะถูกลบอย่างถาวร
+              </AlertDescription>
+            </Alert>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => {
+              setDeleteDialogOpen(false);
+              setSelectedSession(null);
+            }}>
+              ยกเลิก
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteSession} disabled={isDeleting}>
+              {isDeleting ? "กำลังลบ..." : "ลบ"}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -1296,6 +1513,7 @@ export default function Student() {
                           <TableHead>คะแนน</TableHead>
                           <TableHead>ความคิดเห็นจากอาจารย์</TableHead>
                           <TableHead>ไฟล์</TableHead>
+                          <TableHead>จัดการ</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1358,6 +1576,36 @@ export default function Student() {
                                 <Download className="w-4 h-4" />
                                 ดู
                               </Button>
+                            </TableCell>
+                            <TableCell>
+                              {session.status === 'pending' && (
+                                <div className="flex gap-2">
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm"
+                                    onClick={() => {
+                                      setSelectedSession(session);
+                                      setEditDialogOpen(true);
+                                    }}
+                                    className="gap-1"
+                                  >
+                                    <Edit className="w-4 h-4" />
+                                    แก้ไข
+                                  </Button>
+                                  <Button 
+                                    variant="destructive" 
+                                    size="sm"
+                                    onClick={() => {
+                                      setSelectedSession(session);
+                                      setDeleteDialogOpen(true);
+                                    }}
+                                    className="gap-1"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                    ลบ
+                                  </Button>
+                                </div>
+                              )}
                             </TableCell>
                           </TableRow>
                         ))}
